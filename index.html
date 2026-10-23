@@ -143,7 +143,7 @@ textarea{width:100%;box-sizing:border-box;min-height:84px;border:1.5px solid var
 .planbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .planbar .zoom{display:flex;gap:4px;margin-left:auto}
 .planbar .zoom button{width:44px;height:38px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font-weight:700}
-.planbox{overflow:auto;border:1px solid var(--line);border-radius:var(--r);background:#fff;max-height:70vh;-webkit-overflow-scrolling:touch}
+.planbox{overflow:auto;border:1px solid var(--line);border-radius:var(--r);background:#fff;max-height:70vh;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y;overscroll-behavior:contain}
 .planwrap{position:relative;display:inline-block;vertical-align:top}
 .planwrap img{display:block;max-width:none}
 .hs{position:absolute;padding:0;border:2px solid #1b5bc9;background:rgba(27,91,201,.10);border-radius:3px;box-sizing:border-box}
@@ -405,6 +405,7 @@ function render(){
   else if(UI.tab==="finds") v.innerHTML = viewFinds();
   else v.innerHTML = viewSheet();
   if(UI.tab==="finds") hydrateThumbs();
+  if(UI.tab==="plan") attachPlanGestures();
   fitSectWindows();
   window.scrollTo(0, UI.keepScroll||0); UI.keepScroll=0;
 }
@@ -444,10 +445,32 @@ function viewPlan(){
   const pick=UI.pick?`<div class="pickmsg"><span>指摘 ${UI.draft?.no??""} の位置を図面上でタップ</span><button data-act="pickcancel">やめる</button></div>`:"";
   const hs=i.members.map((m,mi)=>{const b=hotspot(i.id,m); if(!b) return "";
     return `<button class="hs ${m.t}${UI.focus===mi?" focus":""}" data-act="jump" data-i="${mi}" data-s="${memberStat(mi).s}" style="left:${b.l}%;top:${b.t}%;width:${b.w}%;height:${b.h}%" aria-label="${esc(m.sym+" "+m.loc)}"></button>`}).join("");
-  return `${pick}<div class="planbar"><span class="note">${esc(i.place)}</span><span class="zoom"><button data-act="zoom" data-z="-1" aria-label="縮小">－</button><button data-act="zoom" data-z="1" aria-label="拡大">＋</button></span></div>
+  return `${pick}<div class="planbar"><span class="note">${esc(i.place)}</span><span class="zoom"><button data-act="zoom" data-z="-1" aria-label="縮小">－</button><button data-act="zoom" data-z="1" aria-label="拡大">＋</button><button data-act="zoomfit" style="width:auto;padding:0 10px">全体</button></span></div>
   <div class="planbox"><div class="planwrap ${UI.pick?"picking":""}" id="planwrap" style="width:${UI.zoom*100}%"><img src="${i.plan}" alt="${esc(i.title)} キープラン" id="planimg" style="width:100%">${hs}${pins}</div></div>
   <div class="legend"><span style="--c:var(--accent)">検査対象</span><span style="--c:var(--ok)">完了</span><span style="--c:var(--ng)">指摘あり</span></div>
-  <p class="note">枠で囲んだ部材（柱・梁・耐圧盤）をタップすると、部材一覧のその部材へ移動します。番号のピンは指摘です。</p>`;
+  <p class="note">2本指で図面だけを拡大・縮小できます。枠で囲んだ部材（柱・梁・耐圧盤）をタップすると、部材一覧のその部材へ移動します。番号のピンは指摘です。</p>`;
+}
+/* 図面の拡大縮小：図面の枠の中だけを拡大する（画面全体は拡大しない）。
+   (px, py) は枠の中の基準点。指定がなければ枠の中央を基準にする */
+function planZoomTo(z, px, py){
+  const box=document.querySelector(".planbox"), wrap=$("#planwrap"); if(!box||!wrap) return;
+  z=Math.max(1,Math.min(6,z));
+  if(px==null){ px=box.clientWidth/2; py=box.clientHeight/2; }
+  const old=UI.zoom, cx=(box.scrollLeft+px)/old, cy=(box.scrollTop+py)/old;
+  UI.zoom=z; wrap.style.width=z*100+"%";
+  box.scrollLeft=cx*z-px; box.scrollTop=cy*z-py;
+}
+function attachPlanGestures(){
+  const box=document.querySelector(".planbox"); if(!box) return;
+  let pin=null;
+  const mid=(t)=>{ const r=box.getBoundingClientRect(); return {x:(t[0].clientX+t[1].clientX)/2-r.left, y:(t[0].clientY+t[1].clientY)/2-r.top, d:Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY)}; };
+  box.addEventListener("touchstart",e=>{ if(e.touches.length===2){ const m=mid(e.touches); pin={d:m.d, z:UI.zoom}; } },{passive:true});
+  box.addEventListener("touchmove",e=>{ if(pin && e.touches.length===2){ e.preventDefault(); const m=mid(e.touches); planZoomTo(pin.z*m.d/pin.d, m.x, m.y); } },{passive:false});
+  box.addEventListener("touchend",e=>{ if(e.touches.length<2) pin=null; });
+  /* iPhone の Safari は gesture イベントで画面全体を拡大するので止める */
+  ["gesturestart","gesturechange","gestureend"].forEach(ev=>box.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
+  /* パソコン：タッチパッドのピンチ（Ctrl＋ホイール） */
+  box.addEventListener("wheel",e=>{ if(!e.ctrlKey) return; e.preventDefault(); const r=box.getBoundingClientRect(); planZoomTo(UI.zoom*Math.exp(-e.deltaY*0.01), e.clientX-r.left, e.clientY-r.top); },{passive:false});
 }
 function findCard(f){
   const ms=insp().members, m=ms[f.mi];
@@ -629,7 +652,8 @@ document.addEventListener("click", async e=>{
   if(a==="fdelete"){ if(!UI.delArm){UI.delArm=true; el.textContent="本当に削除する"; return;} d.finds=d.finds.filter(f=>f.id!==UI.draft.id); UI.draft=null; save(); closeSheet(); render(); toast("指摘を削除しました"); return; }
   if(a==="pickpin"){ UI.pick={returnTab:UI.tab}; closeSheet(); UI.tab="plan"; render(); return; }
   if(a==="pickcancel"){ const back=UI.pick.returnTab; UI.pick=null; UI.tab=back; render(); openFindSheet(UI.draft); return; }
-  if(a==="zoom"){ UI.zoom=Math.min(4,Math.max(1,UI.zoom+(+el.dataset.z)*.75)); render(); return; }
+  if(a==="zoom"){ planZoomTo(UI.zoom*Math.pow(1.5,+el.dataset.z)); return; }
+  if(a==="zoomfit"){ planZoomTo(1); return; }
   if(a==="editfind"){ if(UI.pick) return; const f=d.finds.find(x=>x.id===el.dataset.id); openFindSheet(Object.assign({},f,{photos:[...f.photos],isNew:false})); return; }
   if(a==="showpin"){ UI.tab="plan"; UI.zoom=Math.max(UI.zoom,1.75); render(); const p=document.querySelector(`.pin[data-id="${el.dataset.id}"]`); p&&p.scrollIntoView({block:"center",inline:"center"}); return; }
   if(a==="done"){ $("#overlay").innerHTML=`<div class="scrim" data-act="sheetbg"><div class="sheet"><h3>是正確認</h3>
