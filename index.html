@@ -88,10 +88,10 @@ nav.tabs button[aria-current="true"]{color:var(--accent);font-weight:700}
 .sectwin .cap{position:absolute;left:0;right:0;bottom:0;background:rgba(19,33,58,.78);color:#fff;font-size:11px;padding:2px 6px;text-align:left;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* 全画面ビューアー */
 .sv{position:fixed;inset:0;z-index:70;background:#2a3038;display:flex;flex-direction:column}
-.sv-bar{display:flex;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top,0px)) 12px 8px;background:#16202a;color:#fff}
-.sv-bar b{flex:1;min-width:0;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sv-bar button{background:#fff;color:#16202a;border:0;border-radius:8px;min-width:44px;height:38px;font-weight:700;padding:0 10px}
-.sv-box{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y}
+.sv-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:calc(8px + env(safe-area-inset-top,0px)) 12px 8px;background:#16202a;color:#fff}
+.sv-bar b{flex:1 0 100%;min-width:0;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sv-bar button{flex:1;background:#fff;color:#16202a;border:0;border-radius:8px;min-width:44px;height:38px;font-weight:700;padding:0 8px}
+.sv-box{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y;overscroll-behavior:contain}
 .sv-wrap{position:relative;background:#fff}
 .sv-hint{color:#c9d1d9;font-size:12px;text-align:center;padding:6px 12px calc(6px + env(safe-area-inset-bottom,0px))}
 .design dt{font-size:12px;color:var(--muted)}
@@ -573,18 +573,26 @@ let SV=null;
 function openSectViewer(m){
   const r=sectFor(m); if(!r) return; const pg=LIST_PAGES[r[0]];
   $("#overlay").innerHTML=`<div class="sv" role="dialog" aria-modal="true" aria-label="断面リスト">
-    <div class="sv-bar"><b>${esc(pg.title)}　${esc(m.sym)}</b><button data-act="svzoom" data-z="-1" aria-label="縮小">－</button><button data-act="svzoom" data-z="1" aria-label="拡大">＋</button><button data-act="svfit">部材</button><button data-act="svclose">閉じる</button></div>
+    <div class="sv-bar"><b>${esc(pg.title)}　${esc(m.sym)}</b><button data-act="svzoom" data-z="-1" aria-label="縮小">－</button><button data-act="svzoom" data-z="1" aria-label="拡大">＋</button><button data-act="svall">全体</button><button data-act="svfit">部材</button><button data-act="svclose">閉じる</button></div>
     <div class="sv-box" id="svbox"><div class="sv-wrap" id="svwrap"><img id="svimg" alt="${esc(pg.title)}"><span class="frame" id="svframe"></span></div></div>
-    <div class="sv-hint">指でずらすと隣の部材やページ全体を見られます。2本指で拡大・縮小できます。</div></div>`;
+    <div class="sv-hint">2本指で断面リストだけを拡大・縮小できます。指でずらすと隣の部材も見られます。</div></div>`;
   $("#svimg").src=pg.img;
   SV={r,pg,z:1}; svFit();
   const box=$("#svbox"); let pin=null;
-  box.addEventListener("touchstart",e=>{ if(e.touches.length===2){ const [a,b]=e.touches, rc=box.getBoundingClientRect();
-    const mx=(a.clientX+b.clientX)/2-rc.left, my=(a.clientY+b.clientY)/2-rc.top;
-    pin={d:Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY), z:SV.z, cx:(box.scrollLeft+mx)/SV.z, cy:(box.scrollTop+my)/SV.z, mx, my}; } },{passive:true});
-  box.addEventListener("touchmove",e=>{ if(pin && e.touches.length===2){ e.preventDefault(); const [a,b]=e.touches;
-    svApply(pin.z*Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY)/pin.d); box.scrollLeft=pin.cx*SV.z-pin.mx; box.scrollTop=pin.cy*SV.z-pin.my; } },{passive:false});
+  const mid=(t)=>{ const rc=box.getBoundingClientRect(); return {x:(t[0].clientX+t[1].clientX)/2-rc.left, y:(t[0].clientY+t[1].clientY)/2-rc.top, d:Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY)}; };
+  box.addEventListener("touchstart",e=>{ if(e.touches.length===2){ pin={d:mid(e.touches).d, z:SV.z}; } },{passive:true});
+  box.addEventListener("touchmove",e=>{ if(pin && e.touches.length===2){ e.preventDefault(); const p=mid(e.touches); svZoomAt(pin.z*p.d/pin.d, p.x, p.y); } },{passive:false});
   box.addEventListener("touchend",e=>{ if(e.touches.length<2) pin=null; });
+  /* iPhone の Safari は gesture イベントで画面全体を拡大するので止める */
+  ["gesturestart","gesturechange","gestureend"].forEach(ev=>box.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
+  /* パソコン：タッチパッドのピンチ（Ctrl＋ホイール） */
+  box.addEventListener("wheel",e=>{ if(!e.ctrlKey) return; e.preventDefault(); const rc=box.getBoundingClientRect(); svZoomAt(SV.z*Math.exp(-e.deltaY*0.01), e.clientX-rc.left, e.clientY-rc.top); },{passive:false});
+}
+/* (px, py) を基準点にして拡大縮小する（基準点の下の図は動かない）。指定がなければ表示の中央 */
+function svZoomAt(z, px, py){
+  const box=$("#svbox"); if(px==null){ px=box.clientWidth/2; py=box.clientHeight/2; }
+  const cx=(box.scrollLeft+px)/SV.z, cy=(box.scrollTop+py)/SV.z;
+  svApply(z); box.scrollLeft=cx*SV.z-px; box.scrollTop=cy*SV.z-py;
 }
 function svApply(z){
   const box=$("#svbox"), {r,pg}=SV; const zmin=Math.min(box.clientWidth/pg.w, box.clientHeight/pg.h)*0.98;
@@ -597,10 +605,8 @@ function svFit(){
   svApply(Math.min(box.clientWidth/rw, box.clientHeight/rh)*0.9);
   box.scrollLeft=(r[1]+rw/2)*SV.z-box.clientWidth/2; box.scrollTop=(r[2]+rh/2)*SV.z-box.clientHeight/2;
 }
-function svZoom(dir){
-  const box=$("#svbox"), cx=(box.scrollLeft+box.clientWidth/2)/SV.z, cy=(box.scrollTop+box.clientHeight/2)/SV.z;
-  svApply(SV.z*Math.pow(1.5,dir)); box.scrollLeft=cx*SV.z-box.clientWidth/2; box.scrollTop=cy*SV.z-box.clientHeight/2;
-}
+function svZoom(dir){ svZoomAt(SV.z*Math.pow(1.5,dir)); }
+function svAll(){ svApply(0); const box=$("#svbox"); box.scrollLeft=0; box.scrollTop=0; }   /* ページ全体（svApply が最小倍率に丸める） */
 window.addEventListener("resize",()=>{ fitSectWindows(); });
 function closeSheet(){ $("#overlay").innerHTML=""; UI.delArm=false; }
 function newDraft(mi,item){
@@ -643,6 +649,7 @@ document.addEventListener("click", async e=>{
   if(a==="svclose"){ $("#overlay").innerHTML=""; return; }
   if(a==="svzoom"){ svZoom(+el.dataset.z); return; }
   if(a==="svfit"){ svFit(); return; }
+  if(a==="svall"){ svAll(); return; }
   if(a==="refs"){ $("#overlay").innerHTML=`<div class="scrim" data-act="sheetbg"><div class="sheet"><h3>基準値メモ</h3><div class="refs">${(insp().refs||REFS).map(r=>`<section><h4>${esc(r.h)}</h4><ul>${r.li.map(x=>`<li class="num" style="font-size:17px">${esc(x)}</li>`).join("")}</ul></section>`).join("")}</div><button class="btn primary" data-act="fclose">閉じる</button></div></div>`; return; }
   if(a==="fclose"){ closeSheet(); return; }
   if(a==="q"){ const t=$("#fs-text"); const add=el.dataset.q; t.value = t.value ? t.value.replace(/\s*$/,"")+(/[。、]$/.test(t.value.trim())?"":"。")+add : add; UI.draft.text=t.value; return; }
