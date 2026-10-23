@@ -78,13 +78,15 @@ nav.tabs button[aria-current="true"]{color:var(--accent);font-weight:700}
 .welcome h1{margin:0;font-size:26px}
 .welcome p{margin:0;line-height:1.7}
 .welcome .filebtn{padding:16px;font-size:17px;text-align:center}
-/* 断面リスト：部材カード内の表示欄 */
-.sectpanel{border:1.5px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--surface)}
-.sp-bar{display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--sunk);border-bottom:1px solid var(--line)}
-.sp-bar b{flex:1;min-width:0;font-size:12px;font-weight:400;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sp-bar button{min-width:40px;height:34px;border-radius:7px;border:1px solid var(--line);background:var(--surface);font-weight:700;padding:0 8px}
-.sp-box{position:relative;height:300px;overflow:auto;background:#fff;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y}
-@media (min-width:560px){.sp-box{height:400px}}
+/* 断面リスト：部材カード内の窓（部材情報の右側）。窓の中だけを拡大縮小できる */
+.dz{display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,46%);gap:8px;align-items:stretch}
+.dz .design{align-content:start}
+.sectpanel{position:relative;min-height:190px;border:1.5px solid var(--line);border-radius:var(--r);overflow:hidden;background:#fff}
+@media (min-width:560px){.dz{grid-template-columns:minmax(0,1fr) 300px}.sectpanel{min-height:260px}}
+.sp-box{position:absolute;inset:0;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y}
+.sp-cap{position:absolute;left:0;top:0;max-width:100%;background:rgba(19,33,58,.72);color:#fff;font-size:10px;line-height:14px;padding:1px 5px;border-bottom-right-radius:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+.sp-ctl{position:absolute;right:4px;bottom:4px;display:flex;gap:4px}
+.sp-ctl button{width:30px;height:30px;border-radius:7px;border:1px solid var(--line);background:rgba(255,255,255,.92);color:#13213a;font-weight:700;font-size:15px;padding:0;display:grid;place-items:center;box-shadow:0 1px 2px rgba(0,0,0,.15)}
 .sv-wrap img{position:absolute;left:0;top:0;max-width:none;user-select:none;-webkit-user-drag:none}
 .sv-wrap .frame{position:absolute;border:3px solid #f2a100;border-radius:3px;box-shadow:0 0 0 2000px rgba(255,255,255,.18);pointer-events:none}
 /* 全画面ビューアー */
@@ -434,8 +436,7 @@ function viewCard(mi){
   return `<button class="back" data-act="close">‹ 部材一覧</button>
   <div class="card-head"><div><div class="kind">${sp.label}　${mi+1-ms.findIndex(x=>x.t===m.t)} / ${ms.filter(x=>x.t===m.t).length}</div><div class="sym">${esc(m.sym)}</div><div class="loc">${esc(m.loc)}</div></div>
   <div style="text-align:right;display:grid;gap:6px;justify-items:end"><span class="num" style="font-size:20px">${st.n}<span style="color:var(--muted)"> / ${st.total}</span></span><button class="refbtn" data-act="refs">基準値メモ</button></div></div>
-  <dl class="design">${design}</dl>
-  ${sectFor(m)?sectPanel(m,mi):""}
+  ${sectFor(m)?`<div class="dz"><dl class="design">${design}</dl>${sectPanel(m,mi)}</div>`:`<dl class="design">${design}</dl>`}
   ${groups}
   <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="addfind">＋ この部材に指摘を追加</button>${hotspot(S.cur,m)?`<button class="btn" data-act="where" data-i="${mi}">図面で場所を見る</button>`:""}</div>
   <div style="height:56px"></div>
@@ -576,8 +577,15 @@ function sectView(box, r, pg, onChange){
   v.zoomAt=(z,px,py)=>{ if(px==null){ px=box.clientWidth/2; py=box.clientHeight/2; }
     const cx=(box.scrollLeft+px)/v.z, cy=(box.scrollTop+py)/v.z; v.apply(z); box.scrollLeft=cx*v.z-px; box.scrollTop=cy*v.z-py; save(); };
   v.zoom=dir=>v.zoomAt(v.z*Math.pow(1.5,dir));
-  v.fit=()=>{ v.apply(Math.min(box.clientWidth/rw, box.clientHeight/rh)*0.9);
-    box.scrollLeft=(r[1]+rw/2)*v.z-box.clientWidth/2; box.scrollTop=(r[2]+rh/2)*v.z-box.clientHeight/2; save(); };
+  /* 部材の枠に合わせて表示する。readable のときは文字が読める倍率（0.7）を下限にし、
+     枠が窓に収まらなければ枠の左上から表示する（部材カード内の小さな窓用） */
+  v.fit=(readable)=>{
+    const zf=Math.min(box.clientWidth/rw, box.clientHeight/rh)*0.92;
+    v.apply(readable ? Math.max(zf,0.7) : zf);
+    const W=rw*v.z, H=rh*v.z;
+    box.scrollLeft = W<=box.clientWidth  ? (r[1]+rw/2)*v.z-box.clientWidth/2  : r[1]*v.z-6;
+    box.scrollTop  = H<=box.clientHeight ? (r[2]+rh/2)*v.z-box.clientHeight/2 : r[2]*v.z-6;
+    save(); };
   v.all=()=>{ v.apply(0); box.scrollLeft=0; box.scrollTop=0; save(); };   /* ページ全体（apply が最小倍率に丸める） */
   v.restore=(z,sl,st)=>{ v.apply(z); box.scrollLeft=sl; box.scrollTop=st; };
   box.addEventListener("scroll",save,{passive:true});
@@ -594,9 +602,8 @@ function sectView(box, r, pg, onChange){
 }
 function sectPanel(m, mi){
   const pg=LIST_PAGES[sectFor(m)[0]];
-  return `<div class="sectpanel"><div class="sp-bar"><b>${esc(pg.title)}</b>
-    <button data-act="spzoom" data-z="-1" aria-label="縮小">－</button><button data-act="spzoom" data-z="1" aria-label="拡大">＋</button><button data-act="spall">全体</button><button data-act="spfit">部材</button><button data-act="sect" data-i="${mi}" aria-label="全画面で表示">⤢</button></div>
-    <div class="sp-box" data-i="${mi}"></div></div>`;
+  return `<div class="sectpanel"><div class="sp-box" data-i="${mi}"></div><span class="sp-cap">${esc(pg.title.split(" ")[1]||pg.title)}</span>
+    <div class="sp-ctl"><button data-act="spzoom" data-z="-1" aria-label="縮小">－</button><button data-act="spzoom" data-z="1" aria-label="拡大">＋</button><button data-act="spfit" aria-label="部材の表示に戻す">↺</button><button data-act="sect" data-i="${mi}" aria-label="全画面で表示">⤢</button></div></div>`;
 }
 let SV=null, SPV=null;
 /* 部材カード内の表示欄。✓を押して画面を描き直しても、同じ部材なら倍率と位置を保つ */
@@ -604,7 +611,7 @@ function initSectPanel(){
   SPV=null; const box=document.querySelector(".sp-box"); if(!box) return;
   const m=insp().members[+box.dataset.i], r=sectFor(m); if(!r) return;
   SPV=sectView(box, r, LIST_PAGES[r[0]], (z,sl,st)=>{ UI.spState={uid:m.uid,z,sl,st}; });
-  const s=UI.spState; if(s && s.uid===m.uid) SPV.restore(s.z,s.sl,s.st); else SPV.fit();
+  const s=UI.spState; if(s && s.uid===m.uid) SPV.restore(s.z,s.sl,s.st); else SPV.fit(true);
 }
 function openSectViewer(m){
   const r=sectFor(m); if(!r) return; const pg=LIST_PAGES[r[0]];
@@ -657,7 +664,7 @@ document.addEventListener("click", async e=>{
   if(a==="svfit"){ SV&&SV.fit(); return; }
   if(a==="svall"){ SV&&SV.all(); return; }
   if(a==="spzoom"){ SPV&&SPV.zoom(+el.dataset.z); return; }
-  if(a==="spfit"){ SPV&&SPV.fit(); return; }
+  if(a==="spfit"){ SPV&&SPV.fit(true); return; }
   if(a==="spall"){ SPV&&SPV.all(); return; }
   if(a==="refs"){ $("#overlay").innerHTML=`<div class="scrim" data-act="sheetbg"><div class="sheet"><h3>基準値メモ</h3><div class="refs">${(insp().refs||REFS).map(r=>`<section><h4>${esc(r.h)}</h4><ul>${r.li.map(x=>`<li class="num" style="font-size:17px">${esc(x)}</li>`).join("")}</ul></section>`).join("")}</div><button class="btn primary" data-act="fclose">閉じる</button></div></div>`; return; }
   if(a==="fclose"){ closeSheet(); return; }
