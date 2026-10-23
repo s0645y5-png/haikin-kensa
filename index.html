@@ -1,31 +1,34 @@
 <!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
-<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="theme-color" content="#1b5bc9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#173563" media="(prefers-color-scheme: dark)"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="配筋検査">
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="theme-color" content="#1e6e4a" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#1a4a33" media="(prefers-color-scheme: dark)"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="配筋検査">
 <title>配筋検査アプリ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Barlow+Condensed:wght@500;600;700&display=swap">
 <style>
 /* Layout: one-hand field tool — sticky header, one member per screen, big tap targets, bottom tab bar */
 :root{
-  --bg:#e8eef8; --surface:#ffffff; --sunk:#f2f6fc; --ink:#13213a; --muted:#52627a; --line:#cdd8e8;
-  --accent:#1b5bc9; --accent-ink:#ffffff; --accent-soft:#e3ecfb;
-  --hd:#1b5bc9; --hd-ink:#ffffff; --hd-muted:#d3e1fa; --hd-track:rgba(255,255,255,.28);
-  --ok:#17834a; --ok-soft:#dff3e7; --ng:#cf3527; --ng-soft:#fde5e2; --na:#76859b; --na-soft:#e9eef6;
+  --bg:#e9f1ec; --surface:#ffffff; --sunk:#f3f8f5; --ink:#14261c; --muted:#546a5d; --line:#cfdcd4;
+  --accent:#1e6e4a; --accent-ink:#ffffff; --accent-soft:#e1f1e8;
+  --hd:#1e6e4a; --hd-ink:#ffffff; --hd-muted:#cfe8da; --hd-track:rgba(255,255,255,.28); --hd-part:#a9c6ff;
+  --part:#1b5bc9;
+  --ok:#17834a; --ok-soft:#dff3e7; --ng:#cf3527; --ng-soft:#fde5e2; --na:#7a8b81; --na-soft:#eaf0ec;
   --f-body:"BIZ UDPGothic","Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;
   --f-num:"Barlow Condensed","BIZ UDPGothic","Arial Narrow",sans-serif;
   --r:10px;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#0d1522; --surface:#152033; --sunk:#111a2a; --ink:#e3eaf5; --muted:#97a6bd; --line:#26344c;
-  --accent:#6d9eff; --accent-ink:#0d1420; --accent-soft:#1a2c4d;
-  --hd:#173563; --hd-ink:#ffffff; --hd-muted:#b4c8ea; --hd-track:rgba(255,255,255,.18);
-  --ok:#4cc380; --ok-soft:#173326; --ng:#ff6d60; --ng-soft:#3a1d1a; --na:#8595ab; --na-soft:#1f2a3c; color-scheme:dark}}
+  --bg:#0d1712; --surface:#15221b; --sunk:#111c16; --ink:#e3efe8; --muted:#98ada1; --line:#273a30;
+  --accent:#5cc98e; --accent-ink:#08140e; --accent-soft:#183326;
+  --hd:#1a4a33; --hd-ink:#ffffff; --hd-muted:#b3d6c3; --hd-track:rgba(255,255,255,.18); --hd-part:#a9c6ff;
+  --part:#6d9eff;
+  --ok:#4cc380; --ok-soft:#173326; --ng:#ff6d60; --ng-soft:#3a1d1a; --na:#8a9a90; --na-soft:#1f2c25; color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#0d1522; --surface:#152033; --sunk:#111a2a; --ink:#e3eaf5; --muted:#97a6bd; --line:#26344c;
-  --accent:#6d9eff; --accent-ink:#0d1420; --accent-soft:#1a2c4d;
-  --hd:#173563; --hd-ink:#ffffff; --hd-muted:#b4c8ea; --hd-track:rgba(255,255,255,.18);
-  --ok:#4cc380; --ok-soft:#173326; --ng:#ff6d60; --ng-soft:#3a1d1a; --na:#8595ab; --na-soft:#1f2a3c; color-scheme:dark}
+  --bg:#0d1712; --surface:#15221b; --sunk:#111c16; --ink:#e3efe8; --muted:#98ada1; --line:#273a30;
+  --accent:#5cc98e; --accent-ink:#08140e; --accent-soft:#183326;
+  --hd:#1a4a33; --hd-ink:#ffffff; --hd-muted:#b3d6c3; --hd-track:rgba(255,255,255,.18); --hd-part:#a9c6ff;
+  --part:#6d9eff;
+  --ok:#4cc380; --ok-soft:#173326; --ng:#ff6d60; --ng-soft:#3a1d1a; --na:#8a9a90; --na-soft:#1f2c25; color-scheme:dark}
 html,body{height:100%}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;-webkit-tap-highlight-color:transparent}
 button,input,select,textarea{font:inherit;color:inherit}
@@ -36,7 +39,8 @@ button{cursor:pointer}
 #app{max-width:760px;margin:0 auto;min-height:100%;display:flex;flex-direction:column}
 header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--hd);color:var(--hd-ink);padding:10px 16px 8px;border-bottom:1px solid var(--hd);display:grid;gap:6px}
 header.top .bar{background:var(--hd-track)}
-header.top .bar i:nth-child(3){background:var(--hd-ink)!important}
+header.top .bar i:nth-child(1){background:var(--hd-ink)!important}
+header.top .bar i:nth-child(3){background:var(--hd-part)!important}
 header.top .top-meta{color:var(--hd-muted)}
 header.top :focus-visible{outline-color:var(--hd-ink)}
 .top-row{display:flex;align-items:center;gap:10px}
@@ -59,7 +63,7 @@ nav.tabs button[aria-current="true"]{color:var(--accent);font-weight:700}
 .mbtn .sym{font-family:var(--f-num);font-weight:600;font-size:22px;line-height:1.05}
 .mbtn .loc{font-size:12px;color:var(--muted)}
 .mbtn .st{position:absolute;right:8px;top:8px;width:10px;height:10px;border-radius:50%;background:var(--line)}
-.mbtn[data-s="part"] .st{background:var(--accent)}
+.mbtn[data-s="part"] .st{background:var(--part)}
 .mbtn[data-s="done"]{border-color:var(--ok)}
 .mbtn[data-s="done"] .st{background:var(--ok)}
 .mbtn[data-s="ng"]{border-color:var(--ng);background:var(--ng-soft)}
@@ -85,7 +89,7 @@ nav.tabs button[aria-current="true"]{color:var(--accent);font-weight:700}
 @media (min-width:560px){.sectwin{width:230px;min-height:210px}}
 .sectwin img,.sv-wrap img{position:absolute;left:0;top:0;max-width:none;user-select:none;-webkit-user-drag:none}
 .sectwin .frame,.sv-wrap .frame{position:absolute;border:3px solid #f2a100;border-radius:3px;box-shadow:0 0 0 2000px rgba(255,255,255,.18);pointer-events:none}
-.sectwin .cap{position:absolute;left:0;right:0;bottom:0;background:rgba(19,33,58,.78);color:#fff;font-size:11px;padding:2px 6px;text-align:left;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sectwin .cap{position:absolute;left:0;right:0;bottom:0;background:rgba(16,36,26,.78);color:#fff;font-size:11px;padding:2px 6px;text-align:left;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* 全画面ビューアー */
 .sv{position:fixed;inset:0;z-index:70;background:#2a3038;display:flex;flex-direction:column}
 .sv-bar{display:flex;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top,0px)) 12px 8px;background:#16202a;color:#fff}
@@ -122,7 +126,7 @@ nav.tabs button[aria-current="true"]{color:var(--accent);font-weight:700}
 .refbtn{background:none;border:1px solid var(--line);border-radius:16px;padding:3px 10px;font-size:12px;color:var(--muted)}
 
 /* bottom sheet */
-.scrim{position:fixed;inset:0;background:rgba(8,16,32,.45);z-index:50;display:flex;align-items:flex-end;justify-content:center}
+.scrim{position:fixed;inset:0;background:rgba(8,20,14,.45);z-index:50;display:flex;align-items:flex-end;justify-content:center}
 .sheet{background:var(--surface);width:100%;max-width:760px;max-height:92%;overflow:auto;border-radius:16px 16px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom,0px));display:grid;gap:12px}
 .sheet h3{margin:0;font-size:17px}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
@@ -381,7 +385,7 @@ function renderTop(){
   sel.innerHTML=INSPECTIONS.map(i=>`<option value="${i.id}" ${i.id===S.cur?"selected":""}>${esc(i.title)}　（${i.members.length}部材）</option>`).join("");
   const t=totals(), d=D();
   const w=x=>(x/t.all*100).toFixed(1)+"%";
-  $("#topbar").innerHTML=`<i style="width:${w(t.done)};background:var(--ok)"></i><i style="width:${w(t.ng)};background:var(--ng)"></i><i style="width:${w(t.part)};background:var(--accent)"></i>`;
+  $("#topbar").innerHTML=`<i style="width:${w(t.done)};background:var(--ok)"></i><i style="width:${w(t.ng)};background:var(--ng)"></i><i style="width:${w(t.part)};background:var(--part)"></i>`;
   const open=d.finds.filter(f=>f.status!=="done").length;
   $("#topmeta").innerHTML=`<span>完了 <b class="num">${t.done+t.ng}</b> / ${t.all}　指摘 <b class="num">${d.finds.length}</b>件（未是正 ${open}）</span><span>検査日 ${esc(md(d.head.date))}</span>`;
   $("#fbadge").innerHTML= open? `<span class="badge">${open}</span>`:"";
@@ -416,7 +420,7 @@ function viewList(){
     return `<section class="sec"><h2><span>${SPEC[t].label}</span><span class="num">${done} / ${idx.length}</span></h2><div class="grid">${
       idx.map(i=>{const m=ms[i],st=memberStat(i);return `<button class="mbtn${UI.flash===i?" flash":""}" id="tile-${i}" data-act="open" data-i="${i}" data-s="${st.s}"><span class="st"></span><span class="sym">${esc(m.sym)}</span><span class="loc">${esc(m.loc)}</span></button>`}).join("")}</div></section>`;
   };
-  return `<div class="legend"><span style="--c:var(--line)">未着手</span><span style="--c:var(--accent)">途中</span><span style="--c:var(--ok)">完了</span><span style="--c:var(--ng)">指摘あり</span></div>`+typesHere().map(sec).join("");
+  return `<div class="legend"><span style="--c:var(--line)">未着手</span><span style="--c:var(--part)">途中</span><span style="--c:var(--ok)">完了</span><span style="--c:var(--ng)">指摘あり</span></div>`+typesHere().map(sec).join("");
 }
 function viewCard(mi){
   const d=D(), ms=insp().members, m=ms[mi], ma=master(m), sp=SPEC[m.t], st=memberStat(mi);
@@ -446,7 +450,7 @@ function viewPlan(){
     return `<button class="hs ${m.t}${UI.focus===mi?" focus":""}" data-act="jump" data-i="${mi}" data-s="${memberStat(mi).s}" style="left:${b.l}%;top:${b.t}%;width:${b.w}%;height:${b.h}%" aria-label="${esc(m.sym+" "+m.loc)}"></button>`}).join("");
   return `${pick}<div class="planbar"><span class="note">${esc(i.place)}</span><span class="zoom"><button data-act="zoom" data-z="-1" aria-label="縮小">－</button><button data-act="zoom" data-z="1" aria-label="拡大">＋</button></span></div>
   <div class="planbox"><div class="planwrap ${UI.pick?"picking":""}" id="planwrap" style="width:${UI.zoom*100}%"><img src="${i.plan}" alt="${esc(i.title)} キープラン" id="planimg" style="width:100%">${hs}${pins}</div></div>
-  <div class="legend"><span style="--c:var(--accent)">検査対象</span><span style="--c:var(--ok)">完了</span><span style="--c:var(--ng)">指摘あり</span></div>
+  <div class="legend"><span style="--c:var(--part)">検査対象</span><span style="--c:var(--ok)">完了</span><span style="--c:var(--ng)">指摘あり</span></div>
   <p class="note">枠で囲んだ部材（柱・梁・耐圧盤）をタップすると、部材一覧のその部材へ移動します。番号のピンは指摘です。</p>`;
 }
 function findCard(f){
