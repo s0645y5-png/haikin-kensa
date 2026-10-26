@@ -292,16 +292,69 @@ function planZoomTo(z, px, py){
   box.scrollLeft=cx*z-px; box.scrollTop=cy*z-py;
 }
 function attachPlanGestures(){
-  const box=document.querySelector(".planbox"); if(!box) return;
-  let pin=null;
-  const mid=(t)=>{ const r=box.getBoundingClientRect(); return {x:(t[0].clientX+t[1].clientX)/2-r.left, y:(t[0].clientY+t[1].clientY)/2-r.top, d:Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY)}; };
-  box.addEventListener("touchstart",e=>{ if(e.touches.length===2){ const m=mid(e.touches); pin={d:m.d, z:UI.zoom}; } },{passive:true});
-  box.addEventListener("touchmove",e=>{ if(pin && e.touches.length===2){ e.preventDefault(); const m=mid(e.touches); planZoomTo(pin.z*m.d/pin.d, m.x, m.y); } },{passive:false});
-  box.addEventListener("touchend",e=>{ if(e.touches.length<2) pin=null; });
+  const box=document.querySelector(".planbox"), wrap=$("#planwrap"); if(!box||!wrap) return;
+  liveGestures(box, wrap, {
+    getZ:()=>UI.zoom, clamp:z=>Math.max(1,Math.min(6,z)),
+    commit:(z,cx,cy,mx,my)=>{ UI.zoom=z; wrap.style.width=z*100+"%"; box.scrollLeft=cx*z-mx; box.scrollTop=cy*z-my; }
+  });
+}
+/* ===== 指の操作（拡大縮小・移動・スワイプ・2回タップ）を滑らかにする共通の仕組み =====
+   指で操作している間は図を描き直さず、transform（画面の合成）だけで拡大・移動して見せ、指を離したときに1回だけ確定する。
+   大きな画像を毎回描き直すと iPhone ではかくかくするため。c：getZ / clamp / commit(z,cx,cy,mx,my) / canSwipe / onSwipe / onDoubleTap */
+function liveGestures(box, wrap, c){
+  let pin=null, one=null, multi=false, lastTap=null, drag=null, live=null, raf=0;
+  const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+  wrap.style.transformOrigin="0 0";
+  const show=()=>{ raf=0; if(live) wrap.style.transform=`translate(${live.tx}px,${live.ty}px) scale(${live.k})`; };
+  const setLive=(k,tx,ty)=>{ live={k,tx,ty}; wrap.style.willChange="transform"; if(!raf) raf=requestAnimationFrame(show); };   /* 画面の更新1回につき1回だけ書き換える */
+  const clearLive=()=>{ live=null; if(raf){ cancelAnimationFrame(raf); raf=0; } wrap.style.transform=""; wrap.style.willChange=""; };
+  const pt=t=>{ const rc=box.getBoundingClientRect(); return {x:t.clientX-rc.left, y:t.clientY-rc.top}; };
+  /* アニメーションの終わりに1回だけ done を呼ぶ。終了の合図が届かない場合（アプリの切り替え直後など）も時間が来たら必ず確定する */
+  const onEnd=(an,ms,done)=>{ let fired=false; const f=()=>{ if(fired) return; fired=true; done(); }; an.onfinish=f; setTimeout(f, ms+80); };
+  const mid=ts=>{ const a=pt(ts[0]), b=pt(ts[1]); return {x:(a.x+b.x)/2, y:(a.y+b.y)/2, d:Math.hypot(a.x-b.x,a.y-b.y)}; };
+  /* (px, py) を基準点にして z まで滑らかに拡大してから確定する（2回タップ用） */
+  const animateTo=(z,px,py)=>{
+    const z0=c.getZ(); z=c.clamp(z); const sl=box.scrollLeft, st=box.scrollTop, cx=(sl+px)/z0, cy=(st+py)/z0, k=z/z0;
+    if(reduce || !wrap.animate){ c.commit(z,cx,cy,px,py); return; }
+    wrap.style.willChange="transform";
+    const an=wrap.animate([{transform:"none"},{transform:`translate(${(px+sl)*(1-k)}px,${(py+st)*(1-k)}px) scale(${k})`}],{duration:180,easing:"ease-out",fill:"forwards"});
+    onEnd(an,180,()=>{ c.commit(z,cx,cy,px,py); an.cancel(); wrap.style.willChange=""; });
+  };
+  box.addEventListener("touchstart",e=>{
+    if(e.touches.length===1){ const p=pt(e.touches[0]); one={x:p.x, y:p.y, t:Date.now()}; multi=false; drag=null; }
+    if(e.touches.length===2){ multi=true; if(drag){ clearLive(); drag=null; }
+      const m=mid(e.touches), z0=c.getZ();
+      pin={d0:m.d, z0, sl:box.scrollLeft, st:box.scrollTop, cx:(box.scrollLeft+m.x)/z0, cy:(box.scrollTop+m.y)/z0, z:z0, m}; } },{passive:true});
+  box.addEventListener("touchmove",e=>{
+    if(pin && e.touches.length===2){   /* 2本指：指の間の点が指に付いてくるように拡大・移動 */
+      e.preventDefault(); const m=mid(e.touches), z=c.clamp(pin.z0*m.d/pin.d0), k=z/pin.z0;
+      pin.z=z; pin.m=m; setLive(k, m.x+pin.sl-k*pin.cx*pin.z0, m.y+pin.st-k*pin.cy*pin.z0); return; }
+    if(one && !multi && e.touches.length===1 && c.canSwipe && c.canSwipe()){   /* ページ送りできるときの横の動き：図面が指に付いてくる */
+      const p=pt(e.touches[0]), dx=p.x-one.x, dy=p.y-one.y;
+      if(drag || (Math.abs(dx)>8 && Math.abs(dx)>Math.abs(dy))){ e.preventDefault(); drag={dx}; setLive(1,dx,0); } } },{passive:false});
+  box.addEventListener("touchend",e=>{
+    if(pin && e.touches.length<2){ const p=pin; pin=null; clearLive(); c.commit(p.z,p.cx,p.cy,p.m.x,p.m.y); if(!e.touches.length) one=null; return; }
+    if(e.touches.length || !one || multi){ if(!e.touches.length) one=null; return; }
+    const p=pt(e.changedTouches[0]), dx=p.x-one.x, dy=p.y-one.y, dt=Date.now()-one.t, now=Date.now(); one=null;
+    if(drag){   /* 十分に動かした（または素早く払った）ら次のページへ、足りなければ元の位置に戻す */
+      const d=drag.dx; drag=null; lastTap=null;
+      if(Math.abs(d)>box.clientWidth*0.22 || (Math.abs(d)>40 && dt<300)){
+        const dir=d<0?1:-1; live=null; if(raf){ cancelAnimationFrame(raf); raf=0; }
+        if(reduce || !wrap.animate){ clearLive(); c.onSwipe(dir); return; }
+        const an=wrap.animate([{transform:`translateX(${d}px)`},{transform:`translateX(${-dir*box.clientWidth}px)`,opacity:.2}],{duration:140,easing:"ease-in",fill:"forwards"});
+        onEnd(an,140,()=>c.onSwipe(dir));
+      } else { clearLive(); if(wrap.animate && !reduce) wrap.animate([{transform:`translateX(${d}px)`},{transform:"none"}],{duration:160,easing:"ease-out"}); }
+      return; }
+    if(Math.hypot(dx,dy)<12 && dt<300){
+      if(lastTap && now-lastTap.t<350 && Math.hypot(p.x-lastTap.x,p.y-lastTap.y)<30){ lastTap=null; if(c.onDoubleTap){ e.preventDefault(); c.onDoubleTap(p.x,p.y,animateTo); } }
+      else lastTap={t:now, x:p.x, y:p.y};
+    } else lastTap=null; },{passive:false});
+  box.addEventListener("touchcancel",()=>{ if(pin){ const p=pin; pin=null; clearLive(); c.commit(p.z,p.cx,p.cy,p.m.x,p.m.y); } if(drag){ drag=null; clearLive(); } one=null; });
   /* iPhone の Safari は gesture イベントで画面全体を拡大するので止める */
   ["gesturestart","gesturechange","gestureend"].forEach(ev=>box.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
   /* パソコン：タッチパッドのピンチ（Ctrl＋ホイール） */
-  box.addEventListener("wheel",e=>{ if(!e.ctrlKey) return; e.preventDefault(); const r=box.getBoundingClientRect(); planZoomTo(UI.zoom*Math.exp(-e.deltaY*0.01), e.clientX-r.left, e.clientY-r.top); },{passive:false});
+  box.addEventListener("wheel",e=>{ if(!e.ctrlKey) return; e.preventDefault(); const p=pt(e), z0=c.getZ(); c.commit(c.clamp(z0*Math.exp(-e.deltaY*0.01)),(box.scrollLeft+p.x)/z0,(box.scrollTop+p.y)/z0,p.x,p.y); },{passive:false});
+  return {animateTo};
 }
 function findCard(f){
   const ms=insp().members, m=ms[f.mi];
@@ -423,7 +476,7 @@ function viewDwg(){
   <p class="note">${esc(DWG.source)}　作成日 ${esc(DWG.built)}　${DWG.pages.length}ページ</p>
   <span class="btn filebtn" style="text-align:center">新しい構造図ファイルを読み込む<input type="file" id="dwg-file" aria-label="新しい構造図ファイルを読み込む"></span>`;
 }
-function dwgStep(d){ const ps=DWG.pages, k=ps.findIndex(x=>x.p===UI.dwgCur)+d; if(k>=0&&k<ps.length) openDwgViewer(ps[k].p, d); else toast(d>0?"最後のページです":"最初のページです"); }
+function dwgStep(d){ const ps=DWG.pages, k=ps.findIndex(x=>x.p===UI.dwgCur)+d; if(k>=0&&k<ps.length) openDwgViewer(ps[k].p, d); else { openDwgViewer(UI.dwgCur, -d); toast(d>0?"最後のページです":"最初のページです"); } }
 function openDwgViewer(p, dir=0){
   const pg=DWG&&DWG.pages.find(x=>x.p===p); if(!pg) return; UI.dwgCur=p;
   $("#overlay").innerHTML=`<div class="sv" role="dialog" aria-modal="true" aria-label="構造図">
@@ -458,7 +511,7 @@ function sectFor(m){ const d=(insp().sect&&insp().sect[m.t])||SECT[m.t]; return 
 /* opts.onSwipe(dir)：ページ全体が見えているときの左右スワイプ（dir：1＝次、-1＝前）。opts.reset：2回タップで戻す表示 */
 function sectView(box, r, pg, onChange, opts={}){
   box.innerHTML=`<div class="sv-wrap"><img alt="${esc(pg.title)}"><span class="frame"></span></div>`;
-  const wrap=box.firstChild, img=wrap.querySelector("img"), fr=wrap.querySelector(".frame"); img.src=pg.img;
+  const wrap=box.firstChild, img=wrap.querySelector("img"), fr=wrap.querySelector(".frame"); img.decoding="async"; img.src=pg.img;
   const v={z:1}, rw=r[3]-r[1], rh=r[4]-r[2];
   const save=()=>{ if(onChange) onChange(v.z, box.scrollLeft, box.scrollTop); };
   v.apply=z=>{
@@ -483,30 +536,13 @@ function sectView(box, r, pg, onChange, opts={}){
   v.all=()=>{ v.apply(0); box.scrollLeft=0; box.scrollTop=0; v.base=v.z; save(); };   /* ページ全体（apply が最小倍率に丸める） */
   v.restore=(z,sl,st)=>{ v.apply(z); box.scrollLeft=sl; box.scrollTop=st; };
   box.addEventListener("scroll",save,{passive:true});
-  let pin=null;
-  const mid=(t)=>{ const rc=box.getBoundingClientRect(); return {x:(t[0].clientX+t[1].clientX)/2-rc.left, y:(t[0].clientY+t[1].clientY)/2-rc.top, d:Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY)}; };
-  /* 1本指：拡大中は図を動かす（ブラウザのスクロール）。ページ全体が見えているときの左右スワイプはページ送り、2回タップで拡大／元に戻す */
-  let one=null, multi=false, lastTap=null;
-  box.addEventListener("touchstart",e=>{
-    if(e.touches.length===1){ const t0=e.touches[0]; one={x:t0.clientX, y:t0.clientY, t:Date.now()}; multi=false; }
-    if(e.touches.length===2){ multi=true; pin={d:mid(e.touches).d, z:v.z}; } },{passive:true});
-  box.addEventListener("touchmove",e=>{ if(pin && e.touches.length===2){ e.preventDefault(); const p=mid(e.touches); v.zoomAt(pin.z*p.d/pin.d, p.x, p.y); } },{passive:false});
-  box.addEventListener("touchend",e=>{
-    if(e.touches.length<2) pin=null;
-    if(e.touches.length || !one || multi){ if(!e.touches.length) one=null; return; }
-    const t1=e.changedTouches[0], dx=t1.clientX-one.x, dy=t1.clientY-one.y, dt=Date.now()-one.t, now=Date.now(); one=null;
-    if(opts.onSwipe && dt<600 && Math.abs(dx)>60 && Math.abs(dx)>1.5*Math.abs(dy) && v.z<=v.zmin*1.05){   /* ページ全体が見えている（拡大していない）ときだけ */ lastTap=null; opts.onSwipe(dx<0?1:-1); return; }
-    if(Math.hypot(dx,dy)<12 && dt<300){
-      if(lastTap && now-lastTap.t<350 && Math.hypot(t1.clientX-lastTap.x,t1.clientY-lastTap.y)<30){
-        lastTap=null; e.preventDefault(); const rc=box.getBoundingClientRect();
-        if(v.z<=(v.base||v.zmin)*1.3) v.zoomAt(Math.max((v.base||v.zmin)*2.5, v.zmin*2.5), t1.clientX-rc.left, t1.clientY-rc.top);
-        else (opts.reset||v.all)();
-      } else lastTap={t:now, x:t1.clientX, y:t1.clientY};
-    } else lastTap=null; },{passive:false});
-  /* iPhone の Safari は gesture イベントで画面全体を拡大するので止める */
-  ["gesturestart","gesturechange","gestureend"].forEach(ev=>box.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
-  /* パソコン：タッチパッドのピンチ（Ctrl＋ホイール） */
-  box.addEventListener("wheel",e=>{ if(!e.ctrlKey) return; e.preventDefault(); const rc=box.getBoundingClientRect(); v.zoomAt(v.z*Math.exp(-e.deltaY*0.01), e.clientX-rc.left, e.clientY-rc.top); },{passive:false});
+  liveGestures(box, wrap, {
+    getZ:()=>v.z, clamp:z=>Math.max(v.zmin,Math.min(4,z)),
+    commit:(z,cx,cy,mx,my)=>{ v.apply(z); box.scrollLeft=cx*v.z-mx; box.scrollTop=cy*v.z-my; save(); },
+    canSwipe: opts.onSwipe? ()=>v.z<=v.zmin*1.05 : null,   /* ページ全体が見えている（拡大していない）ときだけページ送り */
+    onSwipe: opts.onSwipe,
+    onDoubleTap:(x,y,animateTo)=>{ const base=v.base||v.zmin; if(v.z<=base*1.3) animateTo(Math.max(base*2.5, v.zmin*2.5), x, y); else (opts.reset||v.all)(); }
+  });
   return v;
 }
 function sectPanel(m, mi){
