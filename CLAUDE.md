@@ -9,9 +9,15 @@
 - データファイルの形式（`format: "haikin-data"`）を変えるときは、`haikin-data` 側の作成ツールも合わせて直す。
 
 ## 構成
-- `index.html` … アプリ本体（1ファイル。画面・確認項目・保存・Excel書き出し・断面リストの窓）。**これを直接編集する**
-- `sw.js` … オフライン用キャッシュ（画面はネット優先、Excel部品 ExcelJS 4.4.0 は CDN から取得して保存）
+- `index.html` … 画面の骨組みとスタイル（CSP・外部部品の読み込みもここ）
+- `app.js` … プログラム本体（画面・確認項目・保存・書き出し・断面リストの窓）。**画面を直すときは主にここを編集する**
+- `sw.js` … オフライン用キャッシュ（画面はネット優先、CDN の部品は取得して保存）。CORE・CDN を変えたら VERSION を上げる
 - `manifest.webmanifest`, `icon-*.png`, `apple-touch-icon.png` … ホーム画面追加用
+
+## セキュリティ（変更時に崩さない）
+- **CSP**（index.html の meta）：スクリプトは自サイトと cdnjs だけ。`'unsafe-inline'` のスクリプトは使えないので、プログラムは必ず app.js に書く（`onclick=` などの属性や `<script>` の直書きは不可）。通信（connect-src）は自サイトのみ。
+- **外部部品の照合値（SRI）**：ExcelJS 4.4.0・jsPDF 2.5.1 に `integrity` を付けている。版を変えるときは、ファイルを取得して `openssl dgst -sha512 -binary <file> | openssl base64 -A` で照合値を作り直し、sw.js の CDN と VERSION も合わせる。
+- **読み込んだファイルは信用しない**：データファイルは `sanitizeDataset()`、保存データ・バックアップは `fromStoreData()`／`sanitizeFind()`、写真は `safeImg()` を通してから使う。画面に出す値は `esc()` する。新しい項目を足すときもこの仕組みを通す。
 
 ## 部材種別と確認項目
 `index.html` の `SPEC`：slab 耐圧盤 / beam 地中梁 / girder 大梁 / sbeam 小梁 / floor 床 / col 柱 / wall 壁。
