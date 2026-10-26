@@ -331,13 +331,14 @@ function liveGestures(box, wrap, c){
       pin.z=z; pin.m=m; setLive(k, m.x+pin.sl-k*pin.cx*pin.z0, m.y+pin.st-k*pin.cy*pin.z0); return; }
     if(one && !multi && e.touches.length===1 && c.canSwipe && c.canSwipe()){   /* ページ送りできるときの横の動き：図面が指に付いてくる */
       const p=pt(e.touches[0]), dx=p.x-one.x, dy=p.y-one.y;
-      if(drag || (Math.abs(dx)>8 && Math.abs(dx)>Math.abs(dy))){ e.preventDefault(); drag={dx}; setLive(1,dx,0); } } },{passive:false});
+      if(drag || (Math.abs(dx)>8 && Math.abs(dx)>Math.abs(dy))){ e.preventDefault(); drag={dx}; if(c.dragMove) c.dragMove(dx); else setLive(1,dx,0); } } },{passive:false});
   box.addEventListener("touchend",e=>{
     if(pin && e.touches.length<2){ const p=pin; pin=null; clearLive(); c.commit(p.z,p.cx,p.cy,p.m.x,p.m.y); if(!e.touches.length) one=null; return; }
     if(e.touches.length || !one || multi){ if(!e.touches.length) one=null; return; }
     const p=pt(e.changedTouches[0]), dx=p.x-one.x, dy=p.y-one.y, dt=Date.now()-one.t, now=Date.now(); one=null;
     if(drag){   /* 十分に動かした（または素早く払った）ら次のページへ、足りなければ元の位置に戻す */
       const d=drag.dx; drag=null; lastTap=null;
+      if(c.dragEnd){ c.dragEnd(d, dt); return; }
       if(Math.abs(d)>box.clientWidth*0.22 || (Math.abs(d)>40 && dt<300)){
         const dir=d<0?1:-1; live=null; if(raf){ cancelAnimationFrame(raf); raf=0; }
         if(reduce || !wrap.animate){ clearLive(); c.onSwipe(dir); return; }
@@ -349,7 +350,7 @@ function liveGestures(box, wrap, c){
       if(lastTap && now-lastTap.t<350 && Math.hypot(p.x-lastTap.x,p.y-lastTap.y)<30){ lastTap=null; if(c.onDoubleTap){ e.preventDefault(); c.onDoubleTap(p.x,p.y,animateTo); } }
       else lastTap={t:now, x:p.x, y:p.y};
     } else lastTap=null; },{passive:false});
-  box.addEventListener("touchcancel",()=>{ if(pin){ const p=pin; pin=null; clearLive(); c.commit(p.z,p.cx,p.cy,p.m.x,p.m.y); } if(drag){ drag=null; clearLive(); } one=null; });
+  box.addEventListener("touchcancel",()=>{ if(pin){ const p=pin; pin=null; clearLive(); c.commit(p.z,p.cx,p.cy,p.m.x,p.m.y); } if(drag){ drag=null; if(c.dragEnd) c.dragEnd(0,1000); else clearLive(); } one=null; });
   /* iPhone の Safari は gesture イベントで画面全体を拡大するので止める */
   ["gesturestart","gesturechange","gestureend"].forEach(ev=>box.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
   /* パソコン：タッチパッドのピンチ（Ctrl＋ホイール） */
@@ -476,19 +477,74 @@ function viewDwg(){
   <p class="note">${esc(DWG.source)}　作成日 ${esc(DWG.built)}　${DWG.pages.length}ページ</p>
   <span class="btn filebtn" style="text-align:center">新しい構造図ファイルを読み込む<input type="file" id="dwg-file" aria-label="新しい構造図ファイルを読み込む"></span>`;
 }
-function dwgStep(d){ const ps=DWG.pages, k=ps.findIndex(x=>x.p===UI.dwgCur)+d; if(k>=0&&k<ps.length) openDwgViewer(ps[k].p, d); else { openDwgViewer(UI.dwgCur, -d); toast(d>0?"最後のページです":"最初のページです"); } }
-function openDwgViewer(p, dir=0){
-  const pg=DWG&&DWG.pages.find(x=>x.p===p); if(!pg) return; UI.dwgCur=p;
+/* ページ送り（iPhone の写真アプリのように、隣のページが横から一緒に入ってくる） */
+const DWG_GAP=24;   /* ページとページの間のすき間（px） */
+function dwgNeighbor(d){ const ps=DWG.pages, k=ps.findIndex(x=>x.p===UI.dwgCur)+d; return ps[k]||null; }
+let DWG_SLIDE=null;   /* スワイプ中の隣のページ {host, prev, next, wrap, w, raf, dx} */
+let DWG_PRE={};        /* 前後のページの画像を先に読み込んでおく（スワイプした瞬間に白く見えないように） */
+function dwgPreload(){
+  const keep={};
+  for(const d of [-1,1]){ const n=dwgNeighbor(d); if(!n) continue;
+    const im=DWG_PRE[n.p] || (()=>{ const x=new Image(); x.decoding="async"; x.alt=""; x.src=n.img; if(x.decode) x.decode().catch(()=>{}); return x; })();
+    keep[n.p]=im; }
+  DWG_PRE=keep;
+}
+function dwgPeek(){
+  if(DWG_SLIDE) return DWG_SLIDE;
+  const box=$("#svbox"), sv=box.parentElement, rc=box.getBoundingClientRect(), src=sv.getBoundingClientRect();
+  const host=document.createElement("div"); host.className="sv-peek";
+  Object.assign(host.style,{left:(rc.left-src.left)+"px", top:(rc.top-src.top)+"px", width:rc.width+"px", height:rc.height+"px"});
+  const mk=d=>{ const n=dwgNeighbor(d); if(!n) return null; const z=Math.min(rc.width/n.w, rc.height/n.h)*0.98;
+    let im=DWG_PRE[n.p]; if(!im){ im=new Image(); im.decoding="async"; im.alt=""; im.src=n.img; }
+    im.style.width=n.w*z+"px"; im.style.transform=""; host.appendChild(im); return im; };
+  DWG_SLIDE={host, prev:mk(-1), next:mk(1), wrap:box.querySelector(".sv-wrap"), w:rc.width, raf:0, dx:0};
+  sv.appendChild(host); return DWG_SLIDE;
+}
+function dwgPlace(s, dx){
+  s.wrap.style.transform=`translateX(${dx}px)`;
+  if(s.prev) s.prev.style.transform=`translateX(${dx-s.w-DWG_GAP}px)`;
+  if(s.next) s.next.style.transform=`translateX(${dx+s.w+DWG_GAP}px)`;
+}
+function dwgDragMove(dx){
+  const s=dwgPeek(), dir=dx<0?1:-1;
+  if(!(dir>0?s.next:s.prev)) dx=dx*0.3;   /* その先にページがないときは少しだけ動く（端の手応え） */
+  s.dx=dx; if(!s.raf) s.raf=requestAnimationFrame(()=>{ s.raf=0; dwgPlace(s, s.dx); });
+}
+/* 指を離したとき：十分に動かした・素早く払った → 隣のページへ。足りない → 元に戻す */
+function dwgDragEnd(dx, dt){
+  const s=DWG_SLIDE; if(!s) return; if(s.raf){ cancelAnimationFrame(s.raf); s.raf=0; }
+  const dir=dx<0?1:-1, n=dwgNeighbor(dir), speed=Math.abs(dx)/Math.max(dt,1);
+  const go = !!n && (Math.abs(dx)>s.w*0.3 || (speed>0.45 && Math.abs(dx)>30));
+  dwgAnimate(s, s.dx, go? -dir*(s.w+DWG_GAP) : 0, ()=>{ if(go) openDwgViewer(n.p); else dwgSlideClear(); });
+}
+function dwgSlideClear(){ const s=DWG_SLIDE; if(!s) return; DWG_SLIDE=null; s.host.remove(); s.wrap.style.transform=""; }
+function dwgAnimate(s, from, to, done){
+  const dist=Math.abs(to-from), ms=Math.max(160, Math.min(320, dist/s.w*420));
+  if(matchMedia("(prefers-reduced-motion: reduce)").matches || !s.wrap.animate || dist<1){ dwgPlace(s,to); done(); return; }
+  const opt={duration:ms, easing:"cubic-bezier(.22,.8,.3,1)", fill:"forwards"};   /* 減速しながら止まる */
+  const tr=off=>[{transform:`translateX(${from+off}px)`},{transform:`translateX(${to+off}px)`}];
+  const ans=[s.wrap.animate(tr(0),opt)];
+  if(s.prev) ans.push(s.prev.animate(tr(-s.w-DWG_GAP),opt));
+  if(s.next) ans.push(s.next.animate(tr(s.w+DWG_GAP),opt));
+  let fired=false; const f=()=>{ if(fired) return; fired=true; dwgPlace(s,to); ans.forEach(a=>a.cancel()); done(); };
+  ans[0].onfinish=f; setTimeout(f, ms+80);
+}
+/* ‹ › ボタン：同じ動きで隣のページへ */
+function dwgStep(d){
+  const n=dwgNeighbor(d); if(!n){ toast(d>0?"最後のページです":"最初のページです"); return; }
+  if(SV && SV.z>SV.zmin*1.05) SV.all();   /* 拡大中なら全体表示にしてから送る */
+  const s=dwgPeek(); dwgPlace(s,0); dwgAnimate(s, 0, -d*(s.w+DWG_GAP), ()=>openDwgViewer(n.p));
+}
+function openDwgViewer(p){
+  const pg=DWG&&DWG.pages.find(x=>x.p===p); if(!pg) return; UI.dwgCur=p; DWG_SLIDE=null;
   $("#overlay").innerHTML=`<div class="sv" role="dialog" aria-modal="true" aria-label="構造図">
     <div class="sv-bar"><b>${esc(pg.no+"　"+pg.title)}</b><button data-act="dwgnav" data-d="-1" aria-label="前のページ">‹</button><button data-act="dwgnav" data-d="1" aria-label="次のページ">›</button><button data-act="svzoom" data-z="-1" aria-label="縮小">－</button><button data-act="svzoom" data-z="1" aria-label="拡大">＋</button><button data-act="svall">全体</button><button data-act="svclose">閉じる</button></div>
     <div class="sv-box" id="svbox"></div>
     <div class="sv-hint">左右にスワイプで前後のページ。2回タップか2本指で拡大し、拡大中は指で図面を動かせます。</div></div>`;
-  SV=sectView($("#svbox"), [p,0,0,pg.w,pg.h], {title:pg.no, w:pg.w, h:pg.h, img:pg.img}, null, {onSwipe:dwgStep});
+  SV=sectView($("#svbox"), [p,0,0,pg.w,pg.h], {title:pg.no, w:pg.w, h:pg.h, img:pg.img}, null, {onSwipe:dwgStep, dragMove:dwgDragMove, dragEnd:dwgDragEnd});
   const fr=document.querySelector("#svbox .frame"); if(fr) fr.style.display="none";
   SV.all();
-  const wrap=document.querySelector("#svbox .sv-wrap");
-  if(dir && wrap && wrap.animate && !matchMedia("(prefers-reduced-motion: reduce)").matches)
-    wrap.animate([{transform:`translateX(${dir*60}px)`,opacity:.2},{transform:"none",opacity:1}],{duration:200,easing:"ease-out"});
+  dwgPreload();
 }
 document.addEventListener("input", e=>{ if(e.target.id!=="dwg-q") return; UI.dwgQ=e.target.value; const l=$("#dwg-list"); if(l) l.innerHTML=dwgListHTML(); });
 document.addEventListener("change", e=>{
@@ -540,7 +596,7 @@ function sectView(box, r, pg, onChange, opts={}){
     getZ:()=>v.z, clamp:z=>Math.max(v.zmin,Math.min(4,z)),
     commit:(z,cx,cy,mx,my)=>{ v.apply(z); box.scrollLeft=cx*v.z-mx; box.scrollTop=cy*v.z-my; save(); },
     canSwipe: opts.onSwipe? ()=>v.z<=v.zmin*1.05 : null,   /* ページ全体が見えている（拡大していない）ときだけページ送り */
-    onSwipe: opts.onSwipe,
+    onSwipe: opts.onSwipe, dragMove: opts.dragMove, dragEnd: opts.dragEnd,
     onDoubleTap:(x,y,animateTo)=>{ const base=v.base||v.zmin; if(v.z<=base*1.3) animateTo(Math.max(base*2.5, v.zmin*2.5), x, y); else (opts.reset||v.all)(); }
   });
   return v;
