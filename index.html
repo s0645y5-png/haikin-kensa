@@ -82,11 +82,9 @@ nav.tabs button[aria-current="true"]{color:var(--accent);font-weight:700}
 .welcome h1{margin:0;font-size:26px}
 .welcome p{margin:0;line-height:1.7}
 .welcome .filebtn{padding:16px;font-size:17px;text-align:center}
-/* 断面リスト：部材カード内の窓（部材情報の右側）。窓の中だけを拡大縮小できる */
-.dz{display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,46%);gap:8px;align-items:stretch}
-.dz .design{align-content:start}
-.sectpanel{position:relative;min-height:190px;border:1.5px solid var(--line);border-radius:var(--r);overflow:hidden;background:#fff}
-@media (min-width:560px){.dz{grid-template-columns:minmax(0,1fr) 300px}.sectpanel{min-height:260px}}
+/* 断面リスト：部材カード内の窓（部材情報の上、横幅いっぱい）。窓の中だけを拡大縮小できる */
+.sectpanel{position:relative;height:220px;border:1.5px solid var(--line);border-radius:var(--r);overflow:hidden;background:#fff}
+@media (min-width:560px){.sectpanel{height:300px}}
 .sp-box{position:absolute;inset:0;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y}
 .sp-cap{position:absolute;left:0;top:0;max-width:100%;background:rgba(16,36,26,.72);color:#fff;font-size:10px;line-height:14px;padding:1px 5px;border-bottom-right-radius:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
 .sp-ctl{position:absolute;right:4px;bottom:4px;display:flex;gap:4px}
@@ -440,7 +438,8 @@ function viewCard(mi){
   return `<button class="back" data-act="close">‹ 部材一覧</button>
   <div class="card-head"><div><div class="kind">${sp.label}　${mi+1-ms.findIndex(x=>x.t===m.t)} / ${ms.filter(x=>x.t===m.t).length}</div><div class="sym">${esc(m.sym)}</div><div class="loc">${esc(m.loc)}</div></div>
   <div style="text-align:right;display:grid;gap:6px;justify-items:end"><span class="num" style="font-size:20px">${st.n}<span style="color:var(--muted)"> / ${st.total}</span></span><button class="refbtn" data-act="refs">基準値メモ</button></div></div>
-  ${sectFor(m)?`<div class="dz"><dl class="design">${design}</dl>${sectPanel(m,mi)}</div>`:`<dl class="design">${design}</dl>`}
+  ${sectFor(m)?sectPanel(m,mi):""}
+  <dl class="design">${design}</dl>
   ${groups}
   <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="addfind">＋ この部材に指摘を追加</button>${hotspot(S.cur,m)?`<button class="btn" data-act="where" data-i="${mi}">図面で場所を見る</button>`:""}</div>
   <div style="height:56px"></div>
