@@ -116,6 +116,9 @@ nav.tabs button[aria-current="true"]{color:var(--accent);font-weight:700}
 /* 構造図のページ送り中に横から入ってくる隣のページ */
 .sv-peek{position:absolute;overflow:hidden;pointer-events:none}
 .sv-peek img{position:absolute;left:0;top:0;max-width:none;background:#fff}
+.sv-tabs{display:flex;gap:6px;overflow-x:auto;padding:0 12px 8px;background:#16202a;-webkit-overflow-scrolling:touch}
+.sv-tabs button{flex:0 0 auto;background:#2b3a4a;color:#dfe7ef;border:0;border-radius:16px;height:32px;padding:0 12px;font-size:13px;white-space:nowrap}
+.sv-tabs button.on{background:#ff9f1a;color:#16202a;font-weight:700}
 .sv-hint{color:#c9d1d9;font-size:12px;text-align:center;padding:6px 12px calc(6px + env(safe-area-inset-bottom,0px))}
 .design dt{font-size:12px;color:var(--muted)}
 .design dd{margin:0;font-family:var(--f-num);font-weight:600;font-size:19px;line-height:1.25;font-variant-numeric:tabular-nums}

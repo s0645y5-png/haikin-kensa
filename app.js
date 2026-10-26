@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.26-12";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.27-1";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -36,8 +36,13 @@ function sanitizeDataset(ds){
       if(m.box) o.box=num4(m.box); if(m.dir==="v") o.dir="v"; if(m.off!=null) o.off=safeNum(m.off); return o; })
   })).filter(i=>i.id && i.members.length);
   const refs={}; for(const [k,list] of Object.entries(ds.refs||{})) refs[safeStr(k,40)]=(Array.isArray(list)?list:[]).map(r=>({h:safeStr(r&&r.h,200), li:(Array.isArray(r&&r.li)?r.li:[]).map(x=>safeStr(x,500))}));
-  const figs={}; for(const [name,f] of Object.entries(ds.figs||{})){ if(!f||typeof f!=="object") continue; const o={title:safeStr(f.title,120)};
-    for(const t of TYPES){ if(Array.isArray(f[t])&&f[t].length===5) o[t]=f[t].map(v=>safeNum(v)); } figs[safeStr(name,40)]=o; }
+  /* 参考図：items「種別|符号」（または種別）→ [[見出し, ページ, x0, y0, x1, y1], …]。旧形式（種別 → [ページ, x0, y0, x1, y1]）も読む */
+  const figs={}; for(const [name,f] of Object.entries(ds.figs||{})){ if(!f||typeof f!=="object") continue; const o={title:safeStr(f.title,120), items:{}};
+    const src=f.items&&typeof f.items==="object" ? f.items : Object.fromEntries(TYPES.filter(t=>Array.isArray(f[t])).map(t=>[t,[["要領"].concat(f[t])]]));
+    for(const [k,list] of Object.entries(src).slice(0,2000)){ if(!Array.isArray(list)) continue;
+      const v=list.slice(0,12).filter(x=>Array.isArray(x)&&x.length===6).map(x=>[safeStr(x[0],80)].concat(x.slice(1).map(n=>safeNum(n))));
+      if(v.length) o.items[safeStr(k,80)]=v; }
+    figs[safeStr(name,40)]=o; }
   return {figs, format:ds.format, version:safeNum(ds.version,1), built:safeDate(ds.built),
     project:{id:safeId(ds.project&&ds.project.id)||"project", name:safeStr(ds.project&&ds.project.name,200), short:safeStr(ds.project&&ds.project.short,40)},
     masters:safeStrMap(ds.masters||{})||{}, mstSets:safeStrMap(ds.mstSets||{})||{}, refs, grid, inspections, plans, listPages, sect};
@@ -256,7 +261,7 @@ function viewCard(mi){
   const d=D(), ms=insp().members, m=ms[mi], ma=master(m), sp=SPEC[m.t], st=memberStat(mi);
   const design=sp.design(ma).map(([k,v])=>{
     if(v && typeof v==="object" && v.fig){   /* 参考図へのリンク（データファイルに図があるときだけボタンにする） */
-      const f=FIGS[v.fig]; return `<dt>${esc(k)}</dt><dd>${f&&f[m.t]? `<button class="figlink" data-act="fig" data-fig="${esc(v.fig)}" data-t="${esc(m.t)}">${esc(v.text)}<small>（${esc((f.title.match(/S-\d+\w*/)||[""])[0])}）</small> ▸</button>` : `<button class="figlink figmissing" data-act="fignone">${esc(v.text)}</button>`}</dd>`; }
+      const f=FIGS[v.fig]; return `<dt>${esc(k)}</dt><dd>${figItems(v.fig,m)? `<button class="figlink" data-act="fig" data-fig="${esc(v.fig)}" data-i="${mi}">${esc(v.text)}<small>（${esc(/検討書/.test(f.title)?"検討書":(f.title.match(/S-\d+\w*/)||[""])[0])}）</small> ▸</button>` : `<button class="figlink figmissing" data-act="fignone">${esc(v.text)}</button>`}</dd>`; }
     return `<dt>${esc(k)}</dt><dd>${esc(v||"—")}</dd>`; }).join("");
   const groups=sp.groups.map(g=>{
     const dv=g.dv?g.dv(ma):"";
@@ -623,14 +628,21 @@ function initSectPanel(){
   SPV=sectView(box, r, LIST_PAGES[r[0]], (z,sl,st)=>{ UI.spState={uid:m.uid,z,sl,st}; }, {reset:()=>SPV.fit(true)});
   const s=UI.spState; if(s && s.uid===m.uid) SPV.restore(s.z,s.sl,s.st); else SPV.fit(true);
 }
-/* 参考図（梁貫通補強要領など）を全画面で開く。図の範囲をオレンジで囲み、ページ全体も指で見られる */
-function openFigViewer(name, t){
-  const f=FIGS[name], r=f&&f[t]; if(!r) return; const pg=LIST_PAGES[r[0]]; if(!pg) return;
+/* 参考図（梁貫通補強検討書など）：部材ごとのページの一覧（符号ごと → 種別ごとの順に探す） */
+function figItems(name, m){ const f=FIGS[name]; return f&&(f.items[m.t+"|"+m.sym]||f.items[m.t])||null; }
+/* 全画面で開く。上の見出しで「適用範囲」「一覧表」などを切り替え、拡大していないときは左右スワイプでも切り替わる。
+   一覧表はその部材の段をオレンジで囲む */
+function openFigViewer(name, mi, k=0){
+  const f=FIGS[name], m=insp().members[mi], items=m&&figItems(name,m); if(!items) return;
+  k=(k+items.length)%items.length; const it=items[k], pg=LIST_PAGES[it[1]]; if(!pg) return;
+  const whole=it[2]===0&&it[3]===0&&it[4]>=pg.w*0.95;   /* ページ全体（適用範囲）は枠を出さず全体を表示 */
   $("#overlay").innerHTML=`<div class="sv" role="dialog" aria-modal="true" aria-label="${esc(f.title)}">
-    <div class="sv-bar"><b>${esc(f.title)}</b><button data-act="svzoom" data-z="-1" aria-label="縮小">－</button><button data-act="svzoom" data-z="1" aria-label="拡大">＋</button><button data-act="svall">全体</button><button data-act="svfit">要領</button><button data-act="svclose">閉じる</button></div>
+    <div class="sv-bar"><b>${esc(f.title)}　${esc(m.sym)}</b><button data-act="svzoom" data-z="-1" aria-label="縮小">－</button><button data-act="svzoom" data-z="1" aria-label="拡大">＋</button><button data-act="svall">全体</button>${whole?"":`<button data-act="svfit">部材</button>`}<button data-act="svclose">閉じる</button></div>
+    <div class="sv-tabs">${items.map((x,j)=>`<button data-act="figpg" data-fig="${esc(name)}" data-i="${mi}" data-k="${j}" class="${j===k?"on":""}">${esc(x[0])}</button>`).join("")}</div>
     <div class="sv-box" id="svbox"></div>
-    <div class="sv-hint">2回タップか2本指で拡大し、指で動かして読めます。「要領」で囲みの範囲に戻ります。</div></div>`;
-  SV=sectView($("#svbox"), r, pg, null, {reset:()=>SV.fit()}); SV.fit();
+    <div class="sv-hint">${esc(pg.title)}。左右にスワイプで切り替え、2回タップか2本指で拡大できます。</div></div>`;
+  SV=sectView($("#svbox"), it.slice(1), pg, null, {reset:()=>whole?SV.all():SV.fit(), onSwipe:d=>openFigViewer(name, mi, k+d)});
+  if(whole){ const fr=document.querySelector("#svbox .frame"); if(fr) fr.style.display="none"; SV.all(); } else SV.fit();
 }
 function openSectViewer(m){
   const r=sectFor(m); if(!r) return; const pg=LIST_PAGES[r[0]];
@@ -686,8 +698,9 @@ document.addEventListener("click", async e=>{
   if(a==="dwgopen"){ openDwgViewer(+el.dataset.p); return; }
   if(a==="dwgg"){ UI.dwgG=el.dataset.g; render(); return; }
   if(a==="dwgnav"){ dwgStep(+el.dataset.d); return; }
-  if(a==="fig"){ openFigViewer(el.dataset.fig, el.dataset.t); return; }
-  if(a==="fignone"){ toast("新しいデータファイル（10/26以降）を読み込むと、要領図を見られます"); return; }
+  if(a==="fig"){ openFigViewer(el.dataset.fig, +el.dataset.i); return; }
+  if(a==="figpg"){ openFigViewer(el.dataset.fig, +el.dataset.i, +el.dataset.k); return; }
+  if(a==="fignone"){ toast("新しいデータファイル（10/27以降）を読み込むと、梁貫通補強検討書を見られます"); return; }
   if(a==="spzoom"){ SPV&&SPV.zoom(+el.dataset.z); return; }
   if(a==="spfit"){ SPV&&SPV.fit(true); return; }
   if(a==="spall"){ SPV&&SPV.all(); return; }
