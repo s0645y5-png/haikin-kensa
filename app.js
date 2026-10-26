@@ -42,7 +42,7 @@ function sanitizeDataset(ds){
 function applyData(raw){
   const ds=sanitizeDataset(raw);
   if(!ds.inspections.length) throw new Error("検査箇所がありません");
-  DATA=ds; PROJECT=ds.project;
+  DATA=ds; PROJECT=ds.project; DWG=null;
   ({slab:SLAB={}, beam:BEAM={}, col:COL={}, wall:WALL={}}=ds.masters);
   REFS=ds.refs.default||[]; LIST_PAGES=ds.listPages; SECT=ds.sect; GRID=ds.grid;
   INSPECTIONS=ds.inspections.map(i=>Object.assign({},i,{
@@ -232,6 +232,7 @@ function render(){
   if(UI.tab==="list") v.innerHTML = UI.card==null ? viewList() : viewCard(UI.card);
   else if(UI.tab==="plan") v.innerHTML = viewPlan();
   else if(UI.tab==="finds") v.innerHTML = viewFinds();
+  else if(UI.tab==="dwg") v.innerHTML = viewDwg();
   else v.innerHTML = viewSheet();
   if(UI.tab==="finds") hydrateThumbs();
   if(UI.tab==="plan") attachPlanGestures();
@@ -388,6 +389,65 @@ async function drawSheetThumbs(){
 function shrink(file){
   return new Promise(res=>{const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const M=1280,s=Math.min(1,M/Math.max(im.width,im.height));const c=document.createElement("canvas");c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);c.getContext("2d").drawImage(im,0,0,c.width,c.height);res(c.toDataURL("image/jpeg",.72))};im.onerror=()=>res(r.result);im.src=r.result};r.readAsDataURL(file)});
 }
+/* ===== 構造図タブ：構造図ファイル（.json、構造図一式の全ページ）を一覧し、全画面で拡大して見る ===== */
+let DWG=null;
+function sanitizeDrawings(ds){
+  const pages=(Array.isArray(ds&&ds.pages)?ds.pages:[]).map(p=>({p:Math.floor(safeNum(p&&p.p)), no:safeStr(p&&p.no,20), title:safeStr(p&&p.title,200),
+    group:safeStr(p&&p.group,40)||"その他", w:safeNum(p&&p.w,1), h:safeNum(p&&p.h,1), img:safeImg(p&&p.img)})).filter(p=>p.p>0 && p.img);
+  return {built:safeDate(ds&&ds.built), source:safeStr(ds&&ds.source,120), project:safeId(ds&&ds.project&&ds.project.id), pages};
+}
+async function ensureDrawings(){
+  if(DWG || !DATA) return;
+  const ds=await dbGet("kv","drawings:"+PROJECT.id);
+  if(ds && ds.pages) DWG=sanitizeDrawings(ds);
+}
+function dwgFiltered(){
+  const q=(UI.dwgQ||"").trim().toLowerCase().replace(/\s+/g,""), g=UI.dwgG||"すべて";
+  return DWG.pages.filter(p=>(g==="すべて"||p.group===g) && (!q || (p.no+p.title).toLowerCase().replace(/\s+/g,"").includes(q)));
+}
+function dwgListHTML(){
+  const list=dwgFiltered();
+  return list.length? list.map(p=>`<button class="dwg-item" data-act="dwgopen" data-p="${p.p}"><span class="no">${esc(p.no)}</span><span>${esc(p.title)}</span></button>`).join("")
+    : `<p class="note" style="text-align:center;padding:20px 0">見つかりませんでした</p>`;
+}
+function viewDwg(){
+  if(!DWG) return `<section class="welcome" style="padding:20px 4px">
+    <h1 style="font-size:22px">構造図</h1>
+    <p>構造図ファイル（<b>配筋検査_構造図_〇〇.json</b>）を読み込むと、構造図一式をこのタブで拡大して見られます。</p>
+    <span class="btn primary filebtn">構造図ファイルを選ぶ<input type="file" id="dwg-file" aria-label="構造図ファイルを選ぶ"></span>
+    <p class="note">約20MBあります。読み込みは最初の1回だけで、この端末の中に保存されます。電波のよい場所で読み込んでください。</p></section>`;
+  const groups=["すべて",...new Set(DWG.pages.map(p=>p.group))], g=UI.dwgG||"すべて";
+  return `<input class="dwg-q" id="dwg-q" type="search" placeholder="図面番号・図面名で検索（例：B2、柱、S-025）" value="${esc(UI.dwgQ||"")}" aria-label="構造図を検索">
+  <div class="chips">${groups.map(x=>`<button data-act="dwgg" data-g="${esc(x)}" aria-pressed="${x===g}">${esc(x)}</button>`).join("")}</div>
+  <div class="dwg-list" id="dwg-list">${dwgListHTML()}</div>
+  <p class="note">${esc(DWG.source)}　作成日 ${esc(DWG.built)}　${DWG.pages.length}ページ</p>
+  <span class="btn filebtn" style="text-align:center">新しい構造図ファイルを読み込む<input type="file" id="dwg-file" aria-label="新しい構造図ファイルを読み込む"></span>`;
+}
+function openDwgViewer(p){
+  const pg=DWG&&DWG.pages.find(x=>x.p===p); if(!pg) return; UI.dwgCur=p;
+  $("#overlay").innerHTML=`<div class="sv" role="dialog" aria-modal="true" aria-label="構造図">
+    <div class="sv-bar"><b>${esc(pg.no+"　"+pg.title)}</b><button data-act="dwgnav" data-d="-1" aria-label="前のページ">‹</button><button data-act="dwgnav" data-d="1" aria-label="次のページ">›</button><button data-act="svzoom" data-z="-1" aria-label="縮小">－</button><button data-act="svzoom" data-z="1" aria-label="拡大">＋</button><button data-act="svall">全体</button><button data-act="svclose">閉じる</button></div>
+    <div class="sv-box" id="svbox"></div>
+    <div class="sv-hint">2本指で拡大・縮小できます。‹ › で前後のページへ移動します。</div></div>`;
+  SV=sectView($("#svbox"), [p,0,0,pg.w,pg.h], {title:pg.no, w:pg.w, h:pg.h, img:pg.img});
+  const fr=document.querySelector("#svbox .frame"); if(fr) fr.style.display="none";
+  SV.all();
+}
+document.addEventListener("input", e=>{ if(e.target.id!=="dwg-q") return; UI.dwgQ=e.target.value; const l=$("#dwg-list"); if(l) l.innerHTML=dwgListHTML(); });
+document.addEventListener("change", e=>{
+  if(e.target.id!=="dwg-file") return; const f=e.target.files[0]; e.target.value=""; if(!f) return;
+  toast("構造図ファイルを読み込んでいます…");
+  const r=new FileReader(); r.onload=()=>{
+    let ds; try{ ds=JSON.parse(r.result); }catch(err){ toast("構造図ファイルを読めませんでした"); return; }
+    if(!ds || ds.format!=="haikin-drawings"){ toast("構造図ファイルではありません"); return; }
+    const clean=sanitizeDrawings(ds);
+    if(clean.project && clean.project!==PROJECT.id){ toast("別の工事の構造図ファイルです（"+clean.project+"）"); return; }
+    if(!clean.pages.length){ toast("構造図のページがありません"); return; }
+    dbPut("kv","drawings:"+PROJECT.id, clean); DWG=clean; UI.dwgQ=""; UI.dwgG="すべて"; render();
+    toast("構造図を読み込みました（"+clean.pages.length+"ページ）");
+  }; r.readAsText(f);
+});
+
 /* ===== 断面リスト：部材カード内の表示欄と全画面表示（どちらも sectView で動かす） ===== */
 function sectFor(m){ const d=(insp().sect&&insp().sect[m.t])||SECT[m.t]; return d&&d[m.sym]||null; }
 /* box の中に断面リストのページを表示し、部材の枠をオレンジで囲む。2本指・ボタンで box の中だけを拡大縮小する */
@@ -493,6 +553,9 @@ document.addEventListener("click", async e=>{
   if(a==="svzoom"){ SV&&SV.zoom(+el.dataset.z); return; }
   if(a==="svfit"){ SV&&SV.fit(); return; }
   if(a==="svall"){ SV&&SV.all(); return; }
+  if(a==="dwgopen"){ openDwgViewer(+el.dataset.p); return; }
+  if(a==="dwgg"){ UI.dwgG=el.dataset.g; render(); return; }
+  if(a==="dwgnav"){ const ps=DWG.pages, k=ps.findIndex(x=>x.p===UI.dwgCur)+(+el.dataset.d); if(k>=0&&k<ps.length) openDwgViewer(ps[k].p); return; }
   if(a==="spzoom"){ SPV&&SPV.zoom(+el.dataset.z); return; }
   if(a==="spfit"){ SPV&&SPV.fit(true); return; }
   if(a==="spall"){ SPV&&SPV.all(); return; }
@@ -538,7 +601,9 @@ document.getElementById("tabs").addEventListener("click", e=>{
   const b=e.target.closest("button[data-tab]"); if(!b) return;
   if(UI.pick){ UI.pick=null; UI.draft=null; }
   if(b.dataset.tab==="list" && UI.tab==="list") UI.card=null;
-  UI.tab=b.dataset.tab; render();
+  UI.tab=b.dataset.tab;
+  if(UI.tab==="dwg" && !DWG){ ensureDrawings().then(render); return; }
+  render();
 });
 document.getElementById("insp-select").addEventListener("change", e=>{ S.cur=e.target.value; UI.card=null; UI.pick=null; UI.flash=null; UI.focus=null; save(); render(); });
 document.addEventListener("change", e=>{ const k=e.target.dataset?.h; if(k){ D().head[k]=e.target.value; save(); renderTop(); } });
