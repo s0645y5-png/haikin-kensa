@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.26-8";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.26-9";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[];
@@ -521,9 +521,9 @@ function dwgDragEnd(dx, dt){
 }
 function dwgSlideClear(){ const s=DWG_SLIDE; if(!s) return; DWG_SLIDE=null; s.host.remove(); s.wrap.style.transform=""; }
 function dwgAnimate(s, from, to, done){
-  const dist=Math.abs(to-from), ms=Math.max(600, Math.min(1200, dist/s.w*1550));   /* 滑り込みの時間（ミリ秒）：残りの距離に応じて 0.6〜1.2 秒 */
+  const dist=Math.abs(to-from), ms=Math.max(360, Math.min(720, dist/s.w*930));   /* 滑り込みの時間（ミリ秒）：残りの距離に応じて 0.36〜0.72 秒 */
   if(matchMedia("(prefers-reduced-motion: reduce)").matches || !s.wrap.animate || dist<1){ dwgPlace(s,to); done(); return; }
-  const opt={duration:ms, easing:"cubic-bezier(.33,.1,.25,1)", fill:"forwards"};   /* ゆるやかに動き出し、減速しながら止まる */
+  const opt={duration:ms, easing:"cubic-bezier(.22,.8,.3,1)", fill:"forwards"};   /* 減速しながら止まる */
   const tr=off=>[{transform:`translateX(${from+off}px)`},{transform:`translateX(${to+off}px)`}];
   const ans=[s.wrap.animate(tr(0),opt)];
   if(s.prev) ans.push(s.prev.animate(tr(-s.w-DWG_GAP),opt));
@@ -820,7 +820,7 @@ async function pdfReportPages(){
     pdfText(g,"検査日 "+fmtDate(h.date)+"　　検査方法 "+(h.method||""),PDF_W-M,M+18,{size:24,align:"right"});
     const rows=[["工事名称",PROJECT.name,"検査箇所",i.place],["監理担当者",h.kanri,"現場担当者",h.genba],["是正確認者",h.zesei,"","" ]];
     const cw=[180,980,180,980]; let yy=M+52;
-    rows.forEach(r=>{ let xx=M; r.forEach((v,j)=>{ if(j>=2&&!r[2]){ xx+=cw[j]; return; } pdfRect(g,xx,yy,cw[j],40,j%2===0?"#eef3ea":null); pdfText(g,v,xx+10,yy+20,{size:22}); xx+=cw[j]; }); yy+=40; });
+    rows.forEach(r=>{ let xx=M; r.forEach((v,j)=>{ if(j>=2&&!r[2]){ xx+=cw[j]; return; } pdfRect(g,xx,yy,cw[j],40,j%2===0?"#eaf0fa":null); pdfText(g,v,xx+10,yy+20,{size:22}); xx+=cw[j]; }); yy+=40; });
     return yy+20; };
   const newPage=(withRight)=>{ c=pdfCanvas(); g=c.getContext("2d"); pages.push(c); y=header(); x0=M; xr=withRight? 1470 : PDF_W-M; };
   newPage(true);
@@ -832,7 +832,7 @@ async function pdfReportPages(){
   pdfText(g,"指摘事項",rx,ry+14,{size:22,bold:true}); ry+=32;
   const fcols=[60,200,rw-60-200-80-130,80,130];
   const fhead=["No","部材・位置","指摘事項・処理方法","判定","確認日"];
-  const drawFindHead=(gg,xx,yy)=>{ let x=xx; fhead.forEach((s,j)=>{ pdfRect(gg,x,yy,fcols[j],36,"#eef3ea"); pdfText(gg,s,x+fcols[j]/2,yy+18,{size:20,align:"center"}); x+=fcols[j]; }); return yy+36; };
+  const drawFindHead=(gg,xx,yy)=>{ let x=xx; fhead.forEach((s,j)=>{ pdfRect(gg,x,yy,fcols[j],36,"#eaf0fa"); pdfText(gg,s,x+fcols[j]/2,yy+18,{size:20,align:"center"}); x+=fcols[j]; }); return yy+36; };
   ry=drawFindHead(g,rx,ry);
   const restFinds=[];
   for(const f of d.finds){
@@ -857,11 +857,11 @@ async function pdfReportPages(){
       const part=idx.slice(start,start+n), need=38+HH1+HH2+rows.length*RH+20;
       if(y+need>PDF_H-M){ newPage(false); continue; }
       pdfText(g,SPEC[t].label+"（"+idx.length+"部材"+(idx.length>n?"・"+(start+1)+"〜"+(start+part.length):"")+"）",x0,y+16,{size:24,bold:true}); y+=38;
-      pdfRect(g,x0,y,LW+IW,HH1,"#eef3ea"); pdfText(g,"符号",x0+(LW+IW)/2,y+HH1/2,{size:20,align:"center"});
-      pdfRect(g,x0,y+HH1,LW+IW,HH2,"#eef3ea"); pdfText(g,"位置",x0+(LW+IW)/2,y+HH1+HH2/2,{size:20,align:"center"});
+      pdfRect(g,x0,y,LW+IW,HH1,"#eaf0fa"); pdfText(g,"符号",x0+(LW+IW)/2,y+HH1/2,{size:20,align:"center"});
+      pdfRect(g,x0,y+HH1,LW+IW,HH2,"#eaf0fa"); pdfText(g,"位置",x0+(LW+IW)/2,y+HH1+HH2/2,{size:20,align:"center"});
       part.forEach((mi,j)=>{ const x=x0+LW+IW+j*cw, m=ms[mi];
-        pdfRect(g,x,y,cw,HH1,"#eef3ea"); pdfText(g,m.sym,x+cw/2,y+HH1/2,{size:20,bold:true,align:"center"});
-        pdfRect(g,x,y+HH1,cw,HH2,"#eef3ea"); const ll=pdfWrap(g,m.loc.replace("通り ","通り\n").replace(" / ","\n"),cw-6,15).slice(0,3);
+        pdfRect(g,x,y,cw,HH1,"#eaf0fa"); pdfText(g,m.sym,x+cw/2,y+HH1/2,{size:20,bold:true,align:"center"});
+        pdfRect(g,x,y+HH1,cw,HH2,"#eaf0fa"); const ll=pdfWrap(g,m.loc.replace("通り ","通り\n").replace(" / ","\n"),cw-6,15).slice(0,3);
         ll.forEach((l,k)=>pdfText(g,l,x+cw/2,y+HH1+HH2/2+(k-(ll.length-1)/2)*16,{size:15,align:"center"})); });
       let yy=y+HH1+HH2;
       rows.forEach(r=>{
@@ -877,7 +877,7 @@ async function pdfReportPages(){
   /* 右側に入りきらなかった指摘事項 */
   if(restFinds.length){ newPage(false); pdfText(g,"指摘事項（続き）",x0,y+16,{size:24,bold:true}); y+=38;
     const W=PDF_W-2*M, cols=[70,320,W-70-320-90-160,90,160];
-    let x=x0; fhead.forEach((s,j)=>{ pdfRect(g,x,y,cols[j],36,"#eef3ea"); pdfText(g,s,x+cols[j]/2,y+18,{size:20,align:"center"}); x+=cols[j]; }); y+=36;
+    let x=x0; fhead.forEach((s,j)=>{ pdfRect(g,x,y,cols[j],36,"#eaf0fa"); pdfText(g,s,x+cols[j]/2,y+18,{size:20,align:"center"}); x+=cols[j]; }); y+=36;
     for(const f of restFinds){ const m=ms[f.mi]||{}, lines=pdfWrap(g,f.text,cols[2]-16,20), rh=lines.length*26+14;
       if(y+rh>PDF_H-M){ newPage(false); }
       x=x0; [String(f.no),(m.sym||"")+" "+(m.loc||""),null,f.status==="done"?"OK":"",f.status==="done"?md(f.doneDate):"/"].forEach((s,j)=>{ pdfRect(g,x,y,cols[j],rh); if(s!=null) pdfText(g,s,j===1?x+8:x+cols[j]/2,y+rh/2,{size:20,align:j===1?"left":"center"}); x+=cols[j]; });
