@@ -1,9 +1,9 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.26-10";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.26-11";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
-let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[];
+let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
 /* ===== 読み込んだファイルの検査・整形 =====
    データファイルやバックアップは他の人から受け取ることもあるので、画面に出す前に型と形を確かめる。
    ID は英数字のみ、数値は数値のみ、画像は data:image の Base64 のみを通す */
@@ -14,7 +14,7 @@ const safeImg=u=>typeof u==="string" && /^data:image\/(png|jpeg|webp|gif);base64
 const safeDate=s=>typeof s==="string" && /^\d{4}-\d{2}-\d{2}$/.test(s)? s : "";
 const RES_VALUES=["ok","ng","na"];
 function safeStrMap(o, depth=0){   /* 設計値マスタなど：文字列・数値・配列・入れ子のオブジェクトだけを残す */
-  if(depth>4 || o==null) return null;
+  if(depth>8 || o==null) return null;   /* 入れ子は8段まで（小梁の端部・中央の配筋は5段目にある） */
   if(typeof o==="string") return o.slice(0,500);
   if(typeof o==="number") return Number.isFinite(o)? o : null;
   if(Array.isArray(o)) return o.slice(0,200).map(v=>safeStrMap(v,depth+1));
@@ -36,7 +36,9 @@ function sanitizeDataset(ds){
       if(m.box) o.box=num4(m.box); if(m.dir==="v") o.dir="v"; if(m.off!=null) o.off=safeNum(m.off); return o; })
   })).filter(i=>i.id && i.members.length);
   const refs={}; for(const [k,list] of Object.entries(ds.refs||{})) refs[safeStr(k,40)]=(Array.isArray(list)?list:[]).map(r=>({h:safeStr(r&&r.h,200), li:(Array.isArray(r&&r.li)?r.li:[]).map(x=>safeStr(x,500))}));
-  return {format:ds.format, version:safeNum(ds.version,1), built:safeDate(ds.built),
+  const figs={}; for(const [name,f] of Object.entries(ds.figs||{})){ if(!f||typeof f!=="object") continue; const o={title:safeStr(f.title,120)};
+    for(const t of TYPES){ if(Array.isArray(f[t])&&f[t].length===5) o[t]=f[t].map(v=>safeNum(v)); } figs[safeStr(name,40)]=o; }
+  return {figs, format:ds.format, version:safeNum(ds.version,1), built:safeDate(ds.built),
     project:{id:safeId(ds.project&&ds.project.id)||"project", name:safeStr(ds.project&&ds.project.name,200), short:safeStr(ds.project&&ds.project.short,40)},
     masters:safeStrMap(ds.masters||{})||{}, mstSets:safeStrMap(ds.mstSets||{})||{}, refs, grid, inspections, plans, listPages, sect};
 }
@@ -45,7 +47,7 @@ function applyData(raw){
   if(!ds.inspections.length) throw new Error("検査箇所がありません");
   DATA=ds; PROJECT=ds.project; DWG=null;
   ({slab:SLAB={}, beam:BEAM={}, col:COL={}, wall:WALL={}}=ds.masters);
-  REFS=ds.refs.default||[]; LIST_PAGES=ds.listPages; SECT=ds.sect; GRID=ds.grid;
+  REFS=ds.refs.default||[]; LIST_PAGES=ds.listPages; SECT=ds.sect; GRID=ds.grid; FIGS=ds.figs||{};
   INSPECTIONS=ds.inspections.map(i=>Object.assign({},i,{
     plan:ds.plans[i.plan]||"", refs:i.refs?ds.refs[i.refs]||null:null, mst:i.mst?ds.mstSets[i.mst]||null:null,
     members:i.members.map(m=>Object.assign({uid:m.t+"|"+m.sym+"|"+m.loc},m))}));
@@ -66,7 +68,7 @@ const SPEC = {
     {g:"スタラップ", items:["径","本数","ピッチ"], dv:m=>m.stp},
     {g:"梁貫通", items:["型・径","本数","孔際補強"]},
     {g:"共通", items:["鉄筋のあき","かぶり厚さ"]}],
-    design:m=>[["B×D",m.bd],["上端筋",m.top],["下端筋",m.bot],["STP",m.stp],["腹筋","18-D13"],["孔際補強",m.sl]]},
+    design:m=>[["B×D",m.bd],["上端筋",m.top],["下端筋",m.bot],["STP",m.stp],["腹筋","18-D13"],["孔際補強",m.sl],["補強要領",{fig:"梁貫通", text:"梁貫通補強要領"}]]},
   col:{label:"柱", groups:[
     {g:"断面サイズ", items:["X方向","Y方向"], dv:m=>m.s},
     {g:"主筋", items:["径","本数","芯鉄筋・寄せ筋","継手","定着"], dv:m=>m.m+(m.c?" / 芯 "+m.c:"")},
@@ -86,7 +88,7 @@ const SPEC = {
     {g:"あばら筋", items:["径","ピッチ"], dv:m=>m.stp},
     {g:"腹筋・幅止筋", items:["腹筋","幅止筋"], dv:m=>m.web||"—"},
     {g:"共通", items:["鉄筋のあき","かぶり厚さ"]}],
-    design:m=>[["B×D",m.bd],...(m.pos||[]).map(p=>[p[0],"上 "+p[1]+" / 下 "+p[2]]),["STP",m.stp],["腹筋",m.web||"—"]]},
+    design:m=>[["B×D",m.bd],...(m.pos||[]).map(p=>[p[0],"上 "+p[1]+" / 下 "+p[2]]),["STP",m.stp],["腹筋",m.web||"—"],["梁貫通",{fig:"梁貫通", text:"梁貫通補強要領"}]]},
   floor:{label:"床", groups:[
     {g:"厚さ・レベル", items:["厚さ","天端レベル"], dv:m=>"t = "+m.t},
     {g:"主筋・配力筋", items:["方向","径","ピッチ","継手","定着"], dv:m=>m.r},
@@ -95,7 +97,7 @@ const SPEC = {
     design:m=>[["版厚",m.t],["上端筋",m.top],["下端筋",m.bot],["天端",m.lv||"伏図の凡例による"]]}
 };
 SPEC.girder = Object.assign({}, SPEC.beam, {label:"大梁",
-  design:m=>[["B×D",m.bd],["上端筋",m.top],["下端筋",m.bot],["STP",m.stp],["腹筋",m.web],["孔際補強","梁貫通補強要領による"]]});
+  design:m=>[["B×D",m.bd],["上端筋",m.top],["下端筋",m.bot],["STP",m.stp],["腹筋",m.web],["孔際補強",{fig:"梁貫通", text:"梁貫通補強要領による"}]]});
 const TYPES = ["slab","beam","girder","sbeam","floor","col","wall"];
 const typesHere = () => TYPES.filter(t=>insp().members.some(m=>m.t===t));
 function master(mem){
@@ -252,7 +254,10 @@ function viewList(){
 }
 function viewCard(mi){
   const d=D(), ms=insp().members, m=ms[mi], ma=master(m), sp=SPEC[m.t], st=memberStat(mi);
-  const design=sp.design(ma).map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v||"—")}</dd>`).join("");
+  const design=sp.design(ma).map(([k,v])=>{
+    if(v && typeof v==="object" && v.fig){   /* 参考図へのリンク（データファイルに図があるときだけボタンにする） */
+      const f=FIGS[v.fig]; return `<dt>${esc(k)}</dt><dd>${f&&f[m.t]? `<button class="figlink" data-act="fig" data-fig="${esc(v.fig)}" data-t="${esc(m.t)}">${esc(v.text)}<small>（${esc((f.title.match(/S-\d+\w*/)||[""])[0])}）</small> ▸</button>` : esc(v.text)}</dd>`; }
+    return `<dt>${esc(k)}</dt><dd>${esc(v||"—")}</dd>`; }).join("");
   const groups=sp.groups.map(g=>{
     const dv=g.dv?g.dv(ma):"";
     return `<div class="grp"><div class="grp-h"><b>${esc(g.g)}</b><span class="dv">${esc(dv)}</span></div>${
@@ -618,6 +623,15 @@ function initSectPanel(){
   SPV=sectView(box, r, LIST_PAGES[r[0]], (z,sl,st)=>{ UI.spState={uid:m.uid,z,sl,st}; }, {reset:()=>SPV.fit(true)});
   const s=UI.spState; if(s && s.uid===m.uid) SPV.restore(s.z,s.sl,s.st); else SPV.fit(true);
 }
+/* 参考図（梁貫通補強要領など）を全画面で開く。図の範囲をオレンジで囲み、ページ全体も指で見られる */
+function openFigViewer(name, t){
+  const f=FIGS[name], r=f&&f[t]; if(!r) return; const pg=LIST_PAGES[r[0]]; if(!pg) return;
+  $("#overlay").innerHTML=`<div class="sv" role="dialog" aria-modal="true" aria-label="${esc(f.title)}">
+    <div class="sv-bar"><b>${esc(f.title)}</b><button data-act="svzoom" data-z="-1" aria-label="縮小">－</button><button data-act="svzoom" data-z="1" aria-label="拡大">＋</button><button data-act="svall">全体</button><button data-act="svfit">要領</button><button data-act="svclose">閉じる</button></div>
+    <div class="sv-box" id="svbox"></div>
+    <div class="sv-hint">2回タップか2本指で拡大し、指で動かして読めます。「要領」で囲みの範囲に戻ります。</div></div>`;
+  SV=sectView($("#svbox"), r, pg, null, {reset:()=>SV.fit()}); SV.fit();
+}
 function openSectViewer(m){
   const r=sectFor(m); if(!r) return; const pg=LIST_PAGES[r[0]];
   $("#overlay").innerHTML=`<div class="sv" role="dialog" aria-modal="true" aria-label="断面リスト">
@@ -672,6 +686,7 @@ document.addEventListener("click", async e=>{
   if(a==="dwgopen"){ openDwgViewer(+el.dataset.p); return; }
   if(a==="dwgg"){ UI.dwgG=el.dataset.g; render(); return; }
   if(a==="dwgnav"){ dwgStep(+el.dataset.d); return; }
+  if(a==="fig"){ openFigViewer(el.dataset.fig, el.dataset.t); return; }
   if(a==="spzoom"){ SPV&&SPV.zoom(+el.dataset.z); return; }
   if(a==="spfit"){ SPV&&SPV.fit(true); return; }
   if(a==="spall"){ SPV&&SPV.all(); return; }
