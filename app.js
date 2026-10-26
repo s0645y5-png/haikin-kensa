@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.27-1";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.27-2";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -409,7 +409,7 @@ function viewSheet(){
   ${typesHere().map(tbl).join("")}
   <h3 style="margin:6px 0 4px;font-size:14px">指摘事項</h3>${fl}
   <button class="btn primary" data-act="pdf" style="padding:14px">PDF帳票を書き出す（✓入り断面リスト付き）</button>
-  <p class="note">帳票（検査表・キープラン・指摘事項）、指摘の写真、✓入りの断面リストを1つのPDF（A3横）にまとめます。断面リストには、記録した部材の符号の行ごとに✓（不適合は×）と、検査日・監理担当者を書き込みます。同じ符号が複数の場所にある場合は、最初に記録した場所の結果を使います。</p>
+  <p class="note">帳票（検査表・キープラン・指摘事項）、指摘の写真、✓入りの断面リストを1つのPDF（A3横）にまとめます。断面リストには、記録した部材の符号の行ごとに✓（不適合は×）と、検査日・監理担当者を書き込みます。同じ符号が複数の場所にある場合は、最初に記録した場所の結果を使います。保存する前に、ページごとに指やペンで手書きを書き込めます（書き込みはPDFにだけ入り、記録には残りません）。</p>
   <button class="btn" data-act="xlsx">Excel帳票を書き出す（写真・図面付き）</button>
   <p class="note">書き出したファイルは社内サーバーに保存してください。抜取り検査では、記録のある部材だけを帳票に載せます。</p>
   <div class="two"><button class="btn" data-act="backup">バックアップを保存</button><span class="btn filebtn" style="text-align:center">バックアップを読み込む<input type="file" accept=".json,application/json" id="restore-file" aria-label="バックアップを読み込む"></span></div>
@@ -993,13 +993,142 @@ async function exportPdf(btn){
   const old=btn.textContent; btn.disabled=true; btn.textContent="作成中…";
   try{
     const pages=[...await pdfReportPages(), ...await pdfPhotoPages(), ...await pdfSectPages()];
-    const doc=new window.jspdf.jsPDF({orientation:"landscape",unit:"mm",format:"a3",compress:true});
-    pages.forEach((c,k)=>{ if(k) doc.addPage("a3","landscape"); doc.addImage(c.toDataURL("image/jpeg",0.85),"JPEG",0,0,420,297); });
     const i=insp();
-    await saveFile("配筋検査帳票_"+i.title.replace(/\s+/g,"")+"_"+(D().head.date||"").replace(/-/g,"")+".pdf", doc.output("blob"));
+    openInk(pages, "配筋検査帳票_"+i.title.replace(/\s+/g,"")+"_"+(D().head.date||"").replace(/-/g,"")+".pdf");
   }catch(e){ console.error(e); toast("PDFを作成できませんでした："+(e&&e.message||e)); }
   finally{ btn.disabled=false; btn.textContent=old; }
 }
+async function savePdf(pages, name){
+  const doc=new window.jspdf.jsPDF({orientation:"landscape",unit:"mm",format:"a3",compress:true});
+  pages.forEach((c,k)=>{ if(k) doc.addPage("a3","landscape"); doc.addImage(c.toDataURL("image/jpeg",0.85),"JPEG",0,0,420,297); });
+  await saveFile(name, doc.output("blob"));
+}
+
+/* ===== PDF帳票の手書き：書き出す前にページごとに指・ペンで書き込み、ページの絵に重ねて PDF にする =====
+   書き込みは PDF にだけ入り、検査記録には残らない。1本指（またはペン）で書き、2本指で拡大・移動。
+   Apple Pencil を一度使うと、それ以降は指では書かず1本指で動かす（手のひらで書いてしまわないように） */
+const INK_COLORS={black:"#111111", red:"#d0271a"};
+let INK=null;
+function openInk(pages, name){
+  INK={pages, name, cur:0, strokes:pages.map(()=>[]), ops:pages.map(()=>[]), tool:"black", penSeen:false, z:1, zmin:1};
+  inkShow(0);
+}
+function inkCount(){ return INK.strokes.reduce((n,a)=>n+a.length,0); }
+function inkBar(){
+  const n=INK.pages.length, t=INK.tool, on=k=>t===k?' class="on"':"";
+  return `<b>手書き　${INK.cur+1} / ${n}ページ</b><button data-ink="nav" data-d="-1" aria-label="前のページ">‹</button><button data-ink="nav" data-d="1" aria-label="次のページ">›</button>`+
+    `<button data-ink="tool" data-t="black"${on("black")}>黒</button><button data-ink="tool" data-t="red"${on("red")}>赤</button><button data-ink="tool" data-t="erase"${on("erase")}>消す</button>`+
+    `<button data-ink="undo">戻す</button><button data-ink="all">全体</button><button data-ink="cancel">やめる</button><button data-ink="save" class="go">保存</button>`;
+}
+function inkShow(k){
+  INK.cur=k; const c=INK.pages[k];
+  $("#overlay").innerHTML=`<div class="sv ink" role="dialog" aria-modal="true" aria-label="PDF帳票の手書き">
+    <div class="sv-bar" id="inkbar">${inkBar()}</div>
+    <div class="sv-box" id="inkbox"><div class="sv-wrap" id="inkwrap"><canvas class="ink-layer" id="inkcv"></canvas></div></div>
+    <div class="sv-hint">指かペンで書き込めます。2本指で拡大・移動。書き込みはこの PDF にだけ入ります。</div></div>`;
+  const box=$("#inkbox"), wrap=$("#inkwrap"), cv=$("#inkcv");
+  c.classList.add("ink-page"); wrap.insertBefore(c, cv);
+  cv.width=c.width; cv.height=c.height;
+  INK.box=box; INK.wrap=wrap; INK.cv=cv; INK.g=cv.getContext("2d");
+  inkRedraw(); inkApply(0); box.scrollLeft=0; box.scrollTop=0;
+  inkGestures(box, cv);
+}
+function inkApply(z){
+  const c=INK.pages[INK.cur], b=INK.box;
+  INK.zmin=Math.min(b.clientWidth/c.width, b.clientHeight/c.height)*0.98;
+  INK.z=z=Math.max(INK.zmin,Math.min(2,z));
+  INK.wrap.style.width=c.width*z+"px"; INK.wrap.style.height=c.height*z+"px";
+}
+function inkZoomAt(z,px,py){ const b=INK.box, cx=(b.scrollLeft+px)/INK.z, cy=(b.scrollTop+py)/INK.z; inkApply(z); b.scrollLeft=cx*INK.z-px; b.scrollTop=cy*INK.z-py; }
+function inkLine(g,s){
+  g.save(); g.strokeStyle=s.c; g.fillStyle=s.c; g.lineWidth=s.w; g.lineCap="round"; g.lineJoin="round";
+  const p=s.p;
+  if(p.length<=2){ g.beginPath(); g.arc(p[0],p[1],s.w/2,0,Math.PI*2); g.fill(); }
+  else { g.beginPath(); g.moveTo(p[0],p[1]); for(let i=2;i<p.length;i+=2) g.lineTo(p[i],p[i+1]); g.stroke(); }
+  g.restore();
+}
+function inkRedraw(){ const g=INK.g; g.clearRect(0,0,INK.cv.width,INK.cv.height); INK.strokes[INK.cur].forEach(s=>inkLine(g,s)); }
+/* 消しゴム：触れた線をまるごと消す */
+function inkErase(x,y){
+  const list=INK.strokes[INK.cur], r=Math.max(10,18/INK.z);
+  const near=s=>{ const p=s.p, rr=r+s.w/2;
+    if(p.length<=2) return Math.hypot(p[0]-x,p[1]-y)<=rr;
+    for(let i=2;i<p.length;i+=2){ const ax=p[i-2], ay=p[i-1], dx=p[i]-ax, dy=p[i+1]-ay, L=dx*dx+dy*dy;
+      const t=L? Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/L)) : 0;
+      if(Math.hypot(ax+dx*t-x, ay+dy*t-y)<=rr) return true; }
+    return false; };
+  const hit=list.filter(near); if(!hit.length) return;
+  INK.strokes[INK.cur]=list.filter(s=>!hit.includes(s)); INK.ops[INK.cur].push({del:hit}); inkRedraw();
+}
+function inkGestures(box, cv){
+  const pts=new Map(); let st=null, pan=null, pinch=null, hold=false;
+  const pos=e=>{ const r=INK.wrap.getBoundingClientRect(); return [(e.clientX-r.left)/INK.z, (e.clientY-r.top)/INK.z]; };
+  const touches=()=>[...pts.values()].filter(p=>p.type==="touch");
+  const local=p=>{ const r=box.getBoundingClientRect(); return {x:p.x-r.left, y:p.y-r.top}; };
+  const startPinch=()=>{ const [a,b]=touches(), m=local({x:(a.x+b.x)/2, y:(a.y+b.y)/2});
+    pinch={d:Math.hypot(a.x-b.x,a.y-b.y)||1, z:INK.z, cx:(box.scrollLeft+m.x)/INK.z, cy:(box.scrollTop+m.y)/INK.z}; };
+  cv.addEventListener("pointerdown", e=>{
+    e.preventDefault(); try{ cv.setPointerCapture(e.pointerId); }catch(_){}
+    pts.set(e.pointerId,{x:e.clientX,y:e.clientY,type:e.pointerType});
+    if(e.pointerType==="pen") INK.penSeen=true;
+    if(e.pointerType==="touch"){
+      const n=touches().length;
+      if(n>=2){ if(st&&st.type==="touch"){ st=null; inkRedraw(); } pan=null; hold=true; startPinch(); return; }
+      if(hold) return;
+      if(INK.penSeen){ pan={id:e.pointerId,x:e.clientX,y:e.clientY,sl:box.scrollLeft,st:box.scrollTop}; return; }
+    }
+    if(st) return;
+    const [x,y]=pos(e);
+    if(INK.tool==="erase"){ st={id:e.pointerId,type:e.pointerType,erase:true}; inkErase(x,y); return; }
+    const w=INK.pages[INK.cur].width/2480*4;   /* 線の太さ：A3横 150dpi で約0.7mm */
+    st={id:e.pointerId,type:e.pointerType,s:{c:INK_COLORS[INK.tool],w,p:[x,y]}}; inkLine(INK.g,st.s);
+  });
+  cv.addEventListener("pointermove", e=>{
+    const q=pts.get(e.pointerId); if(!q) return; q.x=e.clientX; q.y=e.clientY;
+    if(pinch && touches().length>=2){ const [a,b]=touches(), m=local({x:(a.x+b.x)/2, y:(a.y+b.y)/2});
+      inkApply(pinch.z*Math.hypot(a.x-b.x,a.y-b.y)/pinch.d); box.scrollLeft=pinch.cx*INK.z-m.x; box.scrollTop=pinch.cy*INK.z-m.y; return; }
+    if(pan && pan.id===e.pointerId){ box.scrollLeft=pan.sl-(e.clientX-pan.x); box.scrollTop=pan.st-(e.clientY-pan.y); return; }
+    if(!st || st.id!==e.pointerId) return;
+    const evs=e.getCoalescedEvents? e.getCoalescedEvents() : [e];
+    for(const ev of (evs.length?evs:[e])){ const [x,y]=pos(ev);
+      if(st.erase){ inkErase(x,y); continue; }
+      const p=st.s.p, g=INK.g; p.push(x,y);
+      g.save(); g.strokeStyle=st.s.c; g.lineWidth=st.s.w; g.lineCap="round"; g.beginPath(); g.moveTo(p[p.length-4],p[p.length-3]); g.lineTo(x,y); g.stroke(); g.restore(); }
+  });
+  const up=e=>{
+    pts.delete(e.pointerId);
+    if(st && st.id===e.pointerId){ if(!st.erase && e.type!=="pointercancel"){ INK.strokes[INK.cur].push(st.s); INK.ops[INK.cur].push({add:st.s}); } st=null; inkRedraw(); }
+    if(pan && pan.id===e.pointerId) pan=null;
+    if(touches().length<2) pinch=null;
+    if(!touches().length) hold=false;
+  };
+  cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
+  /* iPhone の Safari は gesture イベントで画面全体を拡大するので止める。パソコンは Ctrl＋ホイールで拡大 */
+  ["gesturestart","gesturechange","gestureend"].forEach(ev=>box.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
+  box.addEventListener("wheel",e=>{ if(!e.ctrlKey) return; e.preventDefault(); const r=box.getBoundingClientRect(); inkZoomAt(INK.z*Math.exp(-e.deltaY*0.01), e.clientX-r.left, e.clientY-r.top); },{passive:false});
+}
+function inkClose(){ $("#overlay").innerHTML=""; INK=null; }
+document.addEventListener("click", async e=>{
+  const el=e.target.closest("[data-ink]"); if(!el||!INK) return;
+  const a=el.dataset.ink;
+  if(a==="nav"){ const k=INK.cur+(+el.dataset.d); if(k<0||k>=INK.pages.length){ toast(k<0?"最初のページです":"最後のページです"); return; } inkShow(k); return; }
+  if(a==="tool"){ INK.tool=el.dataset.t; $("#inkbar").innerHTML=inkBar(); return; }
+  if(a==="undo"){ const op=INK.ops[INK.cur].pop(); if(!op){ toast("戻せる書き込みがありません"); return; }
+    if(op.add) INK.strokes[INK.cur]=INK.strokes[INK.cur].filter(s=>s!==op.add); else INK.strokes[INK.cur].push(...op.del);
+    inkRedraw(); return; }
+  if(a==="all"){ inkApply(0); INK.box.scrollLeft=0; INK.box.scrollTop=0; return; }
+  if(a==="cancel"){ if(inkCount() && !confirm("書き込みを捨てて閉じますか？")) return; inkClose(); return; }
+  if(a==="save"){
+    if(!window.jspdf){ toast("PDF作成の部品を読み込み中です。電波のある場所で少し待ってから押してください"); return; }
+    el.disabled=true; el.textContent="作成中…";
+    try{
+      /* 書き込みをページの絵の写しに重ねる（失敗しても手書きの画面はそのまま残す） */
+      const out=INK.pages.map((c,k)=>{ if(!INK.strokes[k].length) return c;
+        const o=pdfCanvas(c.width,c.height), g=o.getContext("2d"); g.drawImage(c,0,0); INK.strokes[k].forEach(s=>inkLine(g,s)); return o; });
+      await savePdf(out, INK.name); inkClose();
+    }catch(err){ console.error(err); toast("PDFを作成できませんでした："+(err&&err.message||err)); el.disabled=false; el.textContent="保存"; }
+  }
+});
 async function exportXlsx(btn){
   if(!window.ExcelJS){ toast("Excel作成の部品を読み込み中です。電波のある場所で少し待ってから押してください"); return; }
   const old=btn.textContent; btn.disabled=true; btn.textContent="作成中…";
