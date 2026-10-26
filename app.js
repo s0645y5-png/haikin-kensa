@@ -423,15 +423,19 @@ function viewDwg(){
   <p class="note">${esc(DWG.source)}　作成日 ${esc(DWG.built)}　${DWG.pages.length}ページ</p>
   <span class="btn filebtn" style="text-align:center">新しい構造図ファイルを読み込む<input type="file" id="dwg-file" aria-label="新しい構造図ファイルを読み込む"></span>`;
 }
-function openDwgViewer(p){
+function dwgStep(d){ const ps=DWG.pages, k=ps.findIndex(x=>x.p===UI.dwgCur)+d; if(k>=0&&k<ps.length) openDwgViewer(ps[k].p, d); else toast(d>0?"最後のページです":"最初のページです"); }
+function openDwgViewer(p, dir=0){
   const pg=DWG&&DWG.pages.find(x=>x.p===p); if(!pg) return; UI.dwgCur=p;
   $("#overlay").innerHTML=`<div class="sv" role="dialog" aria-modal="true" aria-label="構造図">
     <div class="sv-bar"><b>${esc(pg.no+"　"+pg.title)}</b><button data-act="dwgnav" data-d="-1" aria-label="前のページ">‹</button><button data-act="dwgnav" data-d="1" aria-label="次のページ">›</button><button data-act="svzoom" data-z="-1" aria-label="縮小">－</button><button data-act="svzoom" data-z="1" aria-label="拡大">＋</button><button data-act="svall">全体</button><button data-act="svclose">閉じる</button></div>
     <div class="sv-box" id="svbox"></div>
-    <div class="sv-hint">2本指で拡大・縮小できます。‹ › で前後のページへ移動します。</div></div>`;
-  SV=sectView($("#svbox"), [p,0,0,pg.w,pg.h], {title:pg.no, w:pg.w, h:pg.h, img:pg.img});
+    <div class="sv-hint">左右にスワイプで前後のページ。2回タップか2本指で拡大し、拡大中は指で図面を動かせます。</div></div>`;
+  SV=sectView($("#svbox"), [p,0,0,pg.w,pg.h], {title:pg.no, w:pg.w, h:pg.h, img:pg.img}, null, {onSwipe:dwgStep});
   const fr=document.querySelector("#svbox .frame"); if(fr) fr.style.display="none";
   SV.all();
+  const wrap=document.querySelector("#svbox .sv-wrap");
+  if(dir && wrap && wrap.animate && !matchMedia("(prefers-reduced-motion: reduce)").matches)
+    wrap.animate([{transform:`translateX(${dir*60}px)`,opacity:.2},{transform:"none",opacity:1}],{duration:200,easing:"ease-out"});
 }
 document.addEventListener("input", e=>{ if(e.target.id!=="dwg-q") return; UI.dwgQ=e.target.value; const l=$("#dwg-list"); if(l) l.innerHTML=dwgListHTML(); });
 document.addEventListener("change", e=>{
@@ -451,13 +455,14 @@ document.addEventListener("change", e=>{
 /* ===== 断面リスト：部材カード内の表示欄と全画面表示（どちらも sectView で動かす） ===== */
 function sectFor(m){ const d=(insp().sect&&insp().sect[m.t])||SECT[m.t]; return d&&d[m.sym]||null; }
 /* box の中に断面リストのページを表示し、部材の枠をオレンジで囲む。2本指・ボタンで box の中だけを拡大縮小する */
-function sectView(box, r, pg, onChange){
+/* opts.onSwipe(dir)：ページ全体が見えているときの左右スワイプ（dir：1＝次、-1＝前）。opts.reset：2回タップで戻す表示 */
+function sectView(box, r, pg, onChange, opts={}){
   box.innerHTML=`<div class="sv-wrap"><img alt="${esc(pg.title)}"><span class="frame"></span></div>`;
   const wrap=box.firstChild, img=wrap.querySelector("img"), fr=wrap.querySelector(".frame"); img.src=pg.img;
   const v={z:1}, rw=r[3]-r[1], rh=r[4]-r[2];
   const save=()=>{ if(onChange) onChange(v.z, box.scrollLeft, box.scrollTop); };
   v.apply=z=>{
-    const zmin=Math.min(box.clientWidth/pg.w, box.clientHeight/pg.h)*0.98;
+    const zmin=Math.min(box.clientWidth/pg.w, box.clientHeight/pg.h)*0.98; v.zmin=zmin;
     v.z=z=Math.max(zmin,Math.min(4,z));
     wrap.style.width=pg.w*z+"px"; wrap.style.height=pg.h*z+"px"; img.style.width=pg.w*z+"px";
     Object.assign(fr.style,{left:(r[1]*z-3)+"px",top:(r[2]*z-3)+"px",width:(rw*z+6)+"px",height:(rh*z+6)+"px"});
@@ -474,15 +479,30 @@ function sectView(box, r, pg, onChange){
     const W=rw*v.z, H=rh*v.z;
     box.scrollLeft = W<=box.clientWidth  ? (r[1]+rw/2)*v.z-box.clientWidth/2  : r[1]*v.z-6;
     box.scrollTop  = H<=box.clientHeight ? (r[2]+rh/2)*v.z-box.clientHeight/2 : r[2]*v.z-6;
-    save(); };
-  v.all=()=>{ v.apply(0); box.scrollLeft=0; box.scrollTop=0; save(); };   /* ページ全体（apply が最小倍率に丸める） */
+    v.base=v.z; save(); };
+  v.all=()=>{ v.apply(0); box.scrollLeft=0; box.scrollTop=0; v.base=v.z; save(); };   /* ページ全体（apply が最小倍率に丸める） */
   v.restore=(z,sl,st)=>{ v.apply(z); box.scrollLeft=sl; box.scrollTop=st; };
   box.addEventListener("scroll",save,{passive:true});
   let pin=null;
   const mid=(t)=>{ const rc=box.getBoundingClientRect(); return {x:(t[0].clientX+t[1].clientX)/2-rc.left, y:(t[0].clientY+t[1].clientY)/2-rc.top, d:Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY)}; };
-  box.addEventListener("touchstart",e=>{ if(e.touches.length===2){ pin={d:mid(e.touches).d, z:v.z}; } },{passive:true});
+  /* 1本指：拡大中は図を動かす（ブラウザのスクロール）。ページ全体が見えているときの左右スワイプはページ送り、2回タップで拡大／元に戻す */
+  let one=null, multi=false, lastTap=null;
+  box.addEventListener("touchstart",e=>{
+    if(e.touches.length===1){ const t0=e.touches[0]; one={x:t0.clientX, y:t0.clientY, t:Date.now()}; multi=false; }
+    if(e.touches.length===2){ multi=true; pin={d:mid(e.touches).d, z:v.z}; } },{passive:true});
   box.addEventListener("touchmove",e=>{ if(pin && e.touches.length===2){ e.preventDefault(); const p=mid(e.touches); v.zoomAt(pin.z*p.d/pin.d, p.x, p.y); } },{passive:false});
-  box.addEventListener("touchend",e=>{ if(e.touches.length<2) pin=null; });
+  box.addEventListener("touchend",e=>{
+    if(e.touches.length<2) pin=null;
+    if(e.touches.length || !one || multi){ if(!e.touches.length) one=null; return; }
+    const t1=e.changedTouches[0], dx=t1.clientX-one.x, dy=t1.clientY-one.y, dt=Date.now()-one.t, now=Date.now(); one=null;
+    if(opts.onSwipe && dt<600 && Math.abs(dx)>60 && Math.abs(dx)>1.5*Math.abs(dy) && v.z<=v.zmin*1.05){   /* ページ全体が見えている（拡大していない）ときだけ */ lastTap=null; opts.onSwipe(dx<0?1:-1); return; }
+    if(Math.hypot(dx,dy)<12 && dt<300){
+      if(lastTap && now-lastTap.t<350 && Math.hypot(t1.clientX-lastTap.x,t1.clientY-lastTap.y)<30){
+        lastTap=null; e.preventDefault(); const rc=box.getBoundingClientRect();
+        if(v.z<=(v.base||v.zmin)*1.3) v.zoomAt(Math.max((v.base||v.zmin)*2.5, v.zmin*2.5), t1.clientX-rc.left, t1.clientY-rc.top);
+        else (opts.reset||v.all)();
+      } else lastTap={t:now, x:t1.clientX, y:t1.clientY};
+    } else lastTap=null; },{passive:false});
   /* iPhone の Safari は gesture イベントで画面全体を拡大するので止める */
   ["gesturestart","gesturechange","gestureend"].forEach(ev=>box.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
   /* パソコン：タッチパッドのピンチ（Ctrl＋ホイール） */
@@ -499,7 +519,7 @@ let SV=null, SPV=null;
 function initSectPanel(){
   SPV=null; const box=document.querySelector(".sp-box"); if(!box) return;
   const m=insp().members[+box.dataset.i], r=sectFor(m); if(!r) return;
-  SPV=sectView(box, r, LIST_PAGES[r[0]], (z,sl,st)=>{ UI.spState={uid:m.uid,z,sl,st}; });
+  SPV=sectView(box, r, LIST_PAGES[r[0]], (z,sl,st)=>{ UI.spState={uid:m.uid,z,sl,st}; }, {reset:()=>SPV.fit(true)});
   const s=UI.spState; if(s && s.uid===m.uid) SPV.restore(s.z,s.sl,s.st); else SPV.fit(true);
 }
 function openSectViewer(m){
@@ -508,7 +528,7 @@ function openSectViewer(m){
     <div class="sv-bar"><b>${esc(pg.title)}　${esc(m.sym)}</b><button data-act="svzoom" data-z="-1" aria-label="縮小">－</button><button data-act="svzoom" data-z="1" aria-label="拡大">＋</button><button data-act="svall">全体</button><button data-act="svfit">部材</button><button data-act="svclose">閉じる</button></div>
     <div class="sv-box" id="svbox"></div>
     <div class="sv-hint">2本指で断面リストだけを拡大・縮小できます。指でずらすと隣の部材も見られます。</div></div>`;
-  SV=sectView($("#svbox"), r, pg); SV.fit();
+  SV=sectView($("#svbox"), r, pg, null, {reset:()=>SV.fit()}); SV.fit();
 }
 function closeSheet(){ $("#overlay").innerHTML=""; UI.delArm=false; }
 function newDraft(mi,item){
@@ -555,7 +575,7 @@ document.addEventListener("click", async e=>{
   if(a==="svall"){ SV&&SV.all(); return; }
   if(a==="dwgopen"){ openDwgViewer(+el.dataset.p); return; }
   if(a==="dwgg"){ UI.dwgG=el.dataset.g; render(); return; }
-  if(a==="dwgnav"){ const ps=DWG.pages, k=ps.findIndex(x=>x.p===UI.dwgCur)+(+el.dataset.d); if(k>=0&&k<ps.length) openDwgViewer(ps[k].p); return; }
+  if(a==="dwgnav"){ dwgStep(+el.dataset.d); return; }
   if(a==="spzoom"){ SPV&&SPV.zoom(+el.dataset.z); return; }
   if(a==="spfit"){ SPV&&SPV.fit(true); return; }
   if(a==="spall"){ SPV&&SPV.all(); return; }
