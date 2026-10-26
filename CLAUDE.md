@@ -20,7 +20,7 @@
 - **読み込んだファイルは信用しない**：データファイルは `sanitizeDataset()`、保存データ・バックアップは `fromStoreData()`／`sanitizeFind()`、写真は `safeImg()` を通してから使う。画面に出す値は `esc()` する。新しい項目を足すときもこの仕組みを通す。
 
 ## 部材種別と確認項目
-`index.html` の `SPEC`：slab 耐圧盤 / beam 地中梁 / girder 大梁 / sbeam 小梁 / floor 床 / col 柱 / wall 壁。
+`app.js` の `SPEC`：slab 耐圧盤 / beam 地中梁 / girder 大梁 / sbeam 小梁 / floor 床 / col 柱 / wall 壁。
 現行の紙の帳票（監理者（構造）配筋検査帳票）の行構成に合わせている。
 
 ## 書き出し
