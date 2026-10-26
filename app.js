@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.26-11";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.26-12";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -256,7 +256,7 @@ function viewCard(mi){
   const d=D(), ms=insp().members, m=ms[mi], ma=master(m), sp=SPEC[m.t], st=memberStat(mi);
   const design=sp.design(ma).map(([k,v])=>{
     if(v && typeof v==="object" && v.fig){   /* 参考図へのリンク（データファイルに図があるときだけボタンにする） */
-      const f=FIGS[v.fig]; return `<dt>${esc(k)}</dt><dd>${f&&f[m.t]? `<button class="figlink" data-act="fig" data-fig="${esc(v.fig)}" data-t="${esc(m.t)}">${esc(v.text)}<small>（${esc((f.title.match(/S-\d+\w*/)||[""])[0])}）</small> ▸</button>` : esc(v.text)}</dd>`; }
+      const f=FIGS[v.fig]; return `<dt>${esc(k)}</dt><dd>${f&&f[m.t]? `<button class="figlink" data-act="fig" data-fig="${esc(v.fig)}" data-t="${esc(m.t)}">${esc(v.text)}<small>（${esc((f.title.match(/S-\d+\w*/)||[""])[0])}）</small> ▸</button>` : `<button class="figlink figmissing" data-act="fignone">${esc(v.text)}</button>`}</dd>`; }
     return `<dt>${esc(k)}</dt><dd>${esc(v||"—")}</dd>`; }).join("");
   const groups=sp.groups.map(g=>{
     const dv=g.dv?g.dv(ma):"";
@@ -687,6 +687,7 @@ document.addEventListener("click", async e=>{
   if(a==="dwgg"){ UI.dwgG=el.dataset.g; render(); return; }
   if(a==="dwgnav"){ dwgStep(+el.dataset.d); return; }
   if(a==="fig"){ openFigViewer(el.dataset.fig, el.dataset.t); return; }
+  if(a==="fignone"){ toast("新しいデータファイル（10/26以降）を読み込むと、要領図を見られます"); return; }
   if(a==="spzoom"){ SPV&&SPV.zoom(+el.dataset.z); return; }
   if(a==="spfit"){ SPV&&SPV.fit(true); return; }
   if(a==="spall"){ SPV&&SPV.all(); return; }
