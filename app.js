@@ -519,7 +519,7 @@ function dwgDragEnd(dx, dt){
 }
 function dwgSlideClear(){ const s=DWG_SLIDE; if(!s) return; DWG_SLIDE=null; s.host.remove(); s.wrap.style.transform=""; }
 function dwgAnimate(s, from, to, done){
-  const dist=Math.abs(to-from), ms=Math.max(240, Math.min(480, dist/s.w*620));   /* 滑り込みの時間（ミリ秒）：残りの距離に応じて 0.24〜0.48 秒 */
+  const dist=Math.abs(to-from), ms=Math.max(360, Math.min(720, dist/s.w*930));   /* 滑り込みの時間（ミリ秒）：残りの距離に応じて 0.36〜0.72 秒 */
   if(matchMedia("(prefers-reduced-motion: reduce)").matches || !s.wrap.animate || dist<1){ dwgPlace(s,to); done(); return; }
   const opt={duration:ms, easing:"cubic-bezier(.22,.8,.3,1)", fill:"forwards"};   /* 減速しながら止まる */
   const tr=off=>[{transform:`translateX(${from+off}px)`},{transform:`translateX(${to+off}px)`}];
