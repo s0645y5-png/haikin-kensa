@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.26-9";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.26-10";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[];
@@ -264,10 +264,12 @@ function viewCard(mi){
   return `<button class="back" data-act="close">‹ 部材一覧</button>
   <div class="card-head"><div><div class="kind">${sp.label}　${mi+1-ms.findIndex(x=>x.t===m.t)} / ${ms.filter(x=>x.t===m.t).length}</div><div class="sym">${esc(m.sym)}</div><div class="loc">${esc(m.loc)}</div></div>
   <div style="text-align:right;display:grid;gap:6px;justify-items:end"><span class="num" style="font-size:20px">${st.n}<span style="color:var(--muted)"> / ${st.total}</span></span><button class="refbtn" data-act="refs">基準値メモ</button></div></div>
+  <div class="cardbody">
   ${sectFor(m)?sectPanel(m,mi):""}
   <dl class="design">${design}</dl>
-  ${groups}
-  <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="addfind">＋ この部材に指摘を追加</button>${hotspot(S.cur,m)?`<button class="btn" data-act="where" data-i="${mi}">図面で場所を見る</button>`:""}</div>
+  <div class="groups">${groups}</div>
+  <div class="cardbtns"><button class="btn" data-act="addfind">＋ この部材に指摘を追加</button>${hotspot(S.cur,m)?`<button class="btn" data-act="where" data-i="${mi}">図面で場所を見る</button>`:""}</div>
+  </div>
   <div style="height:56px"></div>
   <div class="card-foot"><button class="btn" data-act="prev" ${mi===0?"disabled":""}>‹ 前</button><button class="btn primary" data-act="allok">残りを全て ✓</button><button class="btn" data-act="next" ${mi===ms.length-1?"disabled":""}>次 ›</button></div>`;
 }
