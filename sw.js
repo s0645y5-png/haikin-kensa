@@ -1,7 +1,7 @@
 /* 配筋検査アプリ：オフライン用のキャッシュ
    - アプリの画面は「ネット優先・つながらなければ保存済みのもの」で、更新がすぐ届くようにする
    - Excel作成の部品（CDN）は一度取得したら保存したものを使う */
-const VERSION = "v3";   // CORE・CDN のファイル構成を変えたときだけ上げる（画面の更新はネット優先なので不要）
+const VERSION = "v4";   // CORE・CDN のファイル構成を変えたときだけ上げる（画面の更新はネット優先なので不要）
 const CACHE = "haikin-" + VERSION;
 const CORE = ["./", "./index.html", "./app.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 const CDN = ["https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js", "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"];
@@ -32,7 +32,8 @@ self.addEventListener("fetch", e => {
     return;
   }
   if (url.origin !== location.origin) return;
-  e.respondWith(fetch(req).then(r => {
+  /* 電波があるときは毎回サーバーに最新を確かめる（ブラウザの一時保存で古い版が使われないように） */
+  e.respondWith(fetch(req.url, { cache: "no-cache", credentials: "same-origin" }).then(r => {
     if (r.ok) { const copy = r.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
     return r;
   }).catch(() => caches.match(req, { ignoreSearch: true })

@@ -1,5 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
+const APP_VERSION="2026.10.26-8";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[];
@@ -405,7 +406,8 @@ function viewSheet(){
   <h3 style="margin:10px 0 4px;font-size:14px">データファイル</h3>
   <p class="note">${esc(PROJECT.name)}　作成日 ${esc(DATA.built||"")}　検査箇所 ${INSPECTIONS.length} 件</p>
   <span class="btn filebtn" style="text-align:center">新しいデータファイルを読み込む<input type="file" id="data-file" aria-label="新しいデータファイルを読み込む"></span>
-  <p class="note">階が追加されたときなどに、新しいデータファイルに差し替えます。これまでの検査記録はそのまま残ります。</p>`;
+  <p class="note">階が追加されたときなどに、新しいデータファイルに差し替えます。これまでの検査記録はそのまま残ります。</p>
+  <p class="note" style="text-align:right">アプリの版 ${APP_VERSION}</p>`;
 }
 async function hydrateThumbs(){
   for(const img of document.querySelectorAll("img[data-photo]")){ const v=await photo(img.dataset.photo); if(v) img.src=v; }
@@ -519,9 +521,9 @@ function dwgDragEnd(dx, dt){
 }
 function dwgSlideClear(){ const s=DWG_SLIDE; if(!s) return; DWG_SLIDE=null; s.host.remove(); s.wrap.style.transform=""; }
 function dwgAnimate(s, from, to, done){
-  const dist=Math.abs(to-from), ms=Math.max(360, Math.min(720, dist/s.w*930));   /* 滑り込みの時間（ミリ秒）：残りの距離に応じて 0.36〜0.72 秒 */
+  const dist=Math.abs(to-from), ms=Math.max(600, Math.min(1200, dist/s.w*1550));   /* 滑り込みの時間（ミリ秒）：残りの距離に応じて 0.6〜1.2 秒 */
   if(matchMedia("(prefers-reduced-motion: reduce)").matches || !s.wrap.animate || dist<1){ dwgPlace(s,to); done(); return; }
-  const opt={duration:ms, easing:"cubic-bezier(.22,.8,.3,1)", fill:"forwards"};   /* 減速しながら止まる */
+  const opt={duration:ms, easing:"cubic-bezier(.33,.1,.25,1)", fill:"forwards"};   /* ゆるやかに動き出し、減速しながら止まる */
   const tr=off=>[{transform:`translateX(${from+off}px)`},{transform:`translateX(${to+off}px)`}];
   const ans=[s.wrap.animate(tr(0),opt)];
   if(s.prev) ans.push(s.prev.animate(tr(-s.w-DWG_GAP),opt));
