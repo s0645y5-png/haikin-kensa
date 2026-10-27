@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.27-9";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.27-10";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -181,7 +181,11 @@ function fromStoreData(data){
   }
   return out;
 }
-let saveT; function save(){ if(!DATA) return; clearTimeout(saveT); saveT=setTimeout(()=>dbPut("kv","state:"+PROJECT.id,toStore()),250); }
+let saveT=null; function save(){ if(!DATA) return; clearTimeout(saveT); saveT=setTimeout(()=>{ saveT=null; dbPut("kv","state:"+PROJECT.id,toStore()); },250); }
+/* ほかのアプリに切り替えたときは、待たずにすぐ保存する（iPhone は裏に回るとそのまま止まることがある） */
+function flushSave(){ if(saveT!==null && DATA){ clearTimeout(saveT); saveT=null; dbPut("kv","state:"+PROJECT.id,toStore()); } if(INK) inkPersist(true); }
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="hidden") flushSave(); });
+window.addEventListener("pagehide", flushSave);
 async function loadState(){
   const st=await dbGet("kv","state:"+PROJECT.id);
   S={cur:null, data:st?fromStoreData(st.data):{}};
@@ -738,7 +742,8 @@ document.addEventListener("click", async e=>{
     const s=memberStat(mi);
     /* 押し間違えたときのために、数秒だけ「元に戻す」を出す（このボタンで付けた✓だけを外す） */
     toastAct(ms[mi].sym+"　"+(s.s==="ng"?"指摘あり":"完了"), set.length?"元に戻す":"", ()=>{
-      set.forEach(k=>delete d.res[k]); if(!hadFirst && d.firstAt) delete d.firstAt[u]; save();
+      set.forEach(k=>{ if(d.res[k]==="ok") delete d.res[k]; });   /* その後に自分で変えた項目は残す */
+      if(!hadFirst && d.firstAt && !itemKeys(ms[mi].t).some(k=>d.res[mi+"|"+k])) delete d.firstAt[u]; save();
       if(S.cur===cur && UI.tab==="list"){ UI.card=mi; } render(); toast("元に戻しました"); });
     if(mi<ms.length-1){ UI.card++; } render(); return; }
   if(a==="addfind"){ openFindSheet(newDraft(UI.card,null)); return; }
@@ -1189,7 +1194,7 @@ function inkOpts(){
 }
 function inkTools(){ $("#inkbar").innerHTML=inkBar(); $("#inkopts").innerHTML=inkOpts(); }
 function inkShow(k){
-  INK.cur=k; const c=INK.pages[k];
+  inkFree(); INK.cur=k; const c=INK.pages[k];
   $("#overlay").innerHTML=`<div class="sv ink" role="dialog" aria-modal="true" aria-label="PDF帳票の手書き">
     <div class="sv-bar" id="inkbar">${inkBar()}</div>
     <div class="ink-opts" id="inkopts">${inkOpts()}</div>
@@ -1335,17 +1340,20 @@ function inkGestures(box, cv){
   ["gesturestart","gesturechange","gestureend"].forEach(ev=>box.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
   box.addEventListener("wheel",e=>{ if(!e.ctrlKey) return; e.preventDefault(); const r=box.getBoundingClientRect(); inkZoomAt(INK.z*Math.exp(-e.deltaY*0.01), e.clientX-r.left, e.clientY-r.top); },{passive:false});
 }
-function inkClose(){ if(INK) inkPersist(true); $("#overlay").innerHTML=""; INK=null; }
+function inkClose(){ if(INK){ inkPersist(true); inkFree(); } $("#overlay").innerHTML=""; INK=null; }
 /* ページの絵の写しに書き込みを重ねる（マーカーは別の層にまとめてから掛け合わせる） */
+/* ページの絵に書き込みを焼き込む（マーカーは別の層にまとめてから掛け合わせる）。
+   iPhone は canvas の合計の大きさに上限があるので、写しは作らずそのページに直接描き、使い終えた層はすぐ空にする */
 function inkCompose(c, list){
-  if(!list.length) return c;
-  const o=pdfCanvas(c.width,c.height), g=o.getContext("2d"); g.drawImage(c,0,0);
-  const mk=list.filter(s=>s.t==="mk");
+  if(!list.length || c.inkBaked) return c;
+  const g=c.getContext("2d"), mk=list.filter(s=>s.t==="mk");
   if(mk.length){ const h=document.createElement("canvas"); h.width=c.width; h.height=c.height; const hg=h.getContext("2d"); mk.forEach(s=>inkLine(hg,s,1));
-    g.save(); g.globalCompositeOperation="multiply"; g.drawImage(h,0,0); g.restore(); }
+    g.save(); g.globalCompositeOperation="multiply"; g.drawImage(h,0,0); g.restore(); h.width=h.height=0; }
   list.filter(s=>s.t!=="mk").forEach(s=>inkLine(g,s));
-  return o;
+  c.inkBaked=true;   /* 保存に失敗してもう一度押したときに二重に描かない */
+  return c;
 }
+function inkFree(){ if(INK && INK.hl) for(const x of [INK.hl,INK.cv,INK.live]){ x.width=0; x.height=0; } }
 document.addEventListener("click", async e=>{
   const el=e.target.closest("[data-ink]"); if(!el||!INK) return;
   const a=el.dataset.ink, k=INK.cur;
@@ -1367,7 +1375,7 @@ document.addEventListener("click", async e=>{
     el.disabled=true; el.textContent="作成中…";
     try{
       const out=INK.pages.map((c,i)=>inkCompose(c, INK.strokes[i]));   /* 失敗しても手書きの画面はそのまま残す */
-      const blob=pdfBlob(out), name=INK.name; inkClose(); await offerFile(name, blob);
+      const blob=pdfBlob(out), name=INK.name; inkClose(); out.forEach(c=>{ c.width=c.height=0; }); await offerFile(name, blob);
     }catch(err){ console.error(err); toast("PDFを作成できませんでした："+(err&&err.message||err)); el.disabled=false; el.textContent="PDF保存"; }
   }
 });
