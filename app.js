@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.27-5";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.27-6";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -77,9 +77,9 @@ const SPEC = {
   col:{label:"柱", groups:[
     {g:"断面サイズ", items:["X方向","Y方向"], dv:m=>m.s},
     {g:"主筋", items:["径","本数","芯鉄筋・寄せ筋","継手","定着"], dv:m=>m.m+(m.c?" / 芯 "+m.c:"")},
-    {g:"フープ", items:["径","本数","ピッチ"], dv:m=>insp().colJoint?m.j:m.h},
+    {g:"フープ", items:["径","本数","ピッチ"], dv:m=>m.h},
     {g:"共通", items:["鉄筋のあき","かぶり厚さ"]}],
-    design:m=>[["Dx×Dy",m.s],["主筋",m.m],["芯鉄筋",m.c||"—"],["HOOP",m.h],...(insp().colJoint?[["仕口HOOP",m.j+"  ← 基礎梁仕口部"]]:[])]},
+    design:m=>[["Dx×Dy",m.s],["主筋",m.m],["芯鉄筋",m.c||"—"],["フープ",m.h],["仕口フープ（上層）",m.ju||"—"],["仕口フープ（下層）",m.j||"—"]]},   /* ju：上層（柱頭）の仕口、j：下層（柱脚）の仕口 */
   wall:{label:"壁", groups:[
     {g:"壁厚", items:["壁厚"], dv:m=>m.t},
     {g:"縦筋", items:["径","ピッチ","継手","定着"], dv:m=>m.v},
