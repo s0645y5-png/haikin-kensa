@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.27-3";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.27-4";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -409,7 +409,7 @@ function viewSheet(){
   ${typesHere().map(tbl).join("")}
   <h3 style="margin:6px 0 4px;font-size:14px">指摘事項</h3>${fl}
   <button class="btn primary" data-act="pdf" style="padding:14px">PDF帳票を書き出す（✓入り断面リスト付き）</button>
-  <p class="note">帳票（検査表・キープラン・指摘事項）、指摘の写真、✓入りの断面リストを1つのPDF（A3横）にまとめます。断面リストには、記録した部材の符号の行ごとに✓（不適合は×）と、検査日・監理担当者を書き込みます。同じ符号が複数の場所にある場合は、最初に記録した場所の結果を使います。保存する前に、ページごとに指やペンで手書きを書き込めます（書き込みはPDFにだけ入り、記録には残りません）。</p>
+  <p class="note">帳票（検査表・キープラン・指摘事項）、指摘の写真、✓入りの断面リストを1つのPDF（A3横）にまとめます。断面リストには、記録した部材の符号の行ごとに✓（不適合は×）と、検査日・監理担当者を書き込みます。同じ符号が複数の場所にある場合は、最初に記録した場所の結果を使います。保存する前に、ページごとに指やペンで手書き（ペン・マーカー）を書き込めます。書き込みはこの端末に残り、次に書き出すときも続きから書けます（PDFにだけ入り、検査記録やバックアップには入りません。記録を変えると帳票のページの中身がずれることがあります）。</p>
   <button class="btn" data-act="xlsx">Excel帳票を書き出す（写真・図面付き）</button>
   <p class="note">書き出したファイルは社内サーバーに保存してください。抜取り検査では、記録のある部材だけを帳票に載せます。</p>
   <div class="two"><button class="btn" data-act="backup">バックアップを保存</button><span class="btn filebtn" style="text-align:center">バックアップを読み込む<input type="file" accept=".json,application/json" id="restore-file" aria-label="バックアップを読み込む"></span></div>
@@ -732,11 +732,11 @@ document.addEventListener("click", async e=>{
   if(a==="reset"){   /* 確かめる画面を出し、「本当に削除する」を押したときだけ消す */
     const nm=new Set(Object.keys(d.res).map(k=>k.split("|")[0])).size, np=d.finds.reduce((n,f)=>n+f.photos.length,0);
     $("#overlay").innerHTML=`<div class="scrim" data-act="sheetbg"><div class="sheet" role="alertdialog" aria-modal="true" aria-labelledby="rs-h"><h3 id="rs-h">この検査の記録を削除しますか？</h3>
-      <p><b>${esc(insp().title)}</b><br>記録した部材 ${nm}・指摘 ${d.finds.length}件・写真 ${np}枚 と検査日・担当者がこの端末から消えます。元に戻せません。</p>
+      <p><b>${esc(insp().title)}</b><br>記録した部材 ${nm}・指摘 ${d.finds.length}件・写真 ${np}枚 と検査日・担当者、PDF帳票の手書きがこの端末から消えます。元に戻せません。</p>
       <p class="note">残しておきたい場合は、先に「バックアップを保存」してください。</p>
       <div class="two"><button class="btn" data-act="fclose">やめる</button><button class="btn danger fill" data-act="resetdo">本当に削除する</button></div></div></div>`;
     return; }
-  if(a==="resetdo"){ delete S.data[S.cur]; save(); closeSheet(); render(); toast("記録を削除しました"); return; }
+  if(a==="resetdo"){ delete S.data[S.cur]; dbDel("kv",inkDbKey()); save(); closeSheet(); render(); toast("記録を削除しました"); return; }
 });
 function cancelDraft(){
   const dr=UI.draft, d=D();
@@ -991,7 +991,7 @@ async function pdfSectPages(){
     g.font="34px "+PDF_FONT; const tw=g.measureText(st).width;
     g.fillStyle="rgba(255,255,255,.85)"; g.fillRect(pg.w-tw-120,pg.h-300,tw+40,52);
     pdfText(g,st,pg.w-100,pg.h-274,{size:34,align:"right",color:PEN_OK});
-    pages.push(c);
+    c.inkKey="s"+pn; pages.push(c);
   }
   return pages;
 }
@@ -999,9 +999,12 @@ async function exportPdf(btn){
   if(!window.jspdf){ toast("PDF作成の部品を読み込み中です。電波のある場所で少し待ってから押してください"); return; }
   const old=btn.textContent; btn.disabled=true; btn.textContent="作成中…";
   try{
-    const pages=[...await pdfReportPages(), ...await pdfPhotoPages(), ...await pdfSectPages()];
+    /* 手書きを次回も同じページに出すための名前（帳票・写真は何枚目か、断面リストはページ番号） */
+    const rep=await pdfReportPages(), ph=await pdfPhotoPages();
+    rep.forEach((c,k)=>c.inkKey="r"+k); ph.forEach((c,k)=>c.inkKey="p"+k);
+    const pages=[...rep, ...ph, ...await pdfSectPages()];
     const i=insp();
-    openInk(pages, "配筋検査帳票_"+i.title.replace(/\s+/g,"")+"_"+(D().head.date||"").replace(/-/g,"")+".pdf");
+    await openInk(pages, "配筋検査帳票_"+i.title.replace(/\s+/g,"")+"_"+(D().head.date||"").replace(/-/g,"")+".pdf");
   }catch(e){ console.error(e); toast("PDFを作成できませんでした："+(e&&e.message||e)); }
   finally{ btn.disabled=false; btn.textContent=old; }
 }
@@ -1012,44 +1015,87 @@ async function savePdf(pages, name){
 }
 
 /* ===== PDF帳票の手書き：書き出す前にページごとに指・ペンで書き込み、ページの絵に重ねて PDF にする =====
-   書き込みは PDF にだけ入り、検査記録には残らない。1本指（またはペン）で書き、2本指で拡大・移動。
-   Apple Pencil を一度使うと、それ以降は指では書かず1本指で動かす（手のひらで書いてしまわないように） */
+   1本指（またはペン）で書き、2本指で拡大・移動。Apple Pencil を一度使うと、それ以降は指では書かず1本指で動かす。
+   線は点の並び [x, y, 半径, …]（ページの px）。ペンは筆圧で太さが変わり、手ぶれを抑えて描く。
+   マーカーは別の層に描いて下の字と掛け合わせる（字が隠れない）。
+   書き込みは検査ごとに端末に保存し（kv の ink:<工事id>:<検査id>、ページは inkKey で対応）、次に書き出すときも続きから書ける。
+   検査記録（toStore）には入れない */
 const INK_COLORS=[["black","黒","#111111"],["red","赤","#d0271a"],["blue","青","#1849a9"],["green","緑","#17834a"]];
-const INK_SIZES=[["s","細",2.5],["m","中",4],["l","太",8]];   /* 線の太さ（A3横 150dpi のページ上の px。中で約0.7mm） */
-const INK_ALPHAS=[["0","0%",1],["40","40%",0.6],["70","70%",0.3]];   /* 透明度（70% は蛍光ペンのように下の字が透ける） */
-let INK=null, INK_PREF={color:"black", size:"m", alpha:"0"};
-try{ const v=JSON.parse(localStorage.getItem("inkPref")||"null"); if(v) INK_PREF=Object.assign(INK_PREF,v); }catch(e){}
+const INK_MCOLORS=[["yellow","黄","#ffe14d"],["pink","桃","#ff9ecb"],["sky","水","#8fd3ff"],["lime","緑","#a6e88a"]];
+const INK_SIZES=[["s","細",2.5],["m","中",4],["l","太",8]];   /* ペンの太さ（A3横 150dpi のページ上の px。中で約0.7mm） */
+const INK_MSIZES=[["s","細",14],["m","中",24],["l","太",40]];  /* マーカーの太さ */
+const INK_ESIZES=[["s","小",8],["m","中",16],["l","大",32]];   /* 部分消しゴムの大きさ（画面上の px） */
+const INK_ALPHAS=[["0","0%",1],["40","40%",0.6],["70","70%",0.3]];   /* ペンの透明度 */
+const INK_TOOLS=[["pen","ペン"],["marker","マーカー"],["erase","線を消す"],["cut","部分消し"]];
+let INK=null, INK_PREF={color:"black", size:"m", alpha:"0", mcolor:"yellow", msize:"m", esize:"m"};
+try{ const v=JSON.parse(localStorage.getItem("inkPref")||"null"); if(v&&typeof v==="object") for(const k of Object.keys(INK_PREF)) if(typeof v[k]==="string") INK_PREF[k]=v[k]; }catch(e){}
 const inkPick=(list,k)=>(list.find(x=>x[0]===k)||list[0]);
-function openInk(pages, name){
-  INK={pages, name, cur:0, strokes:pages.map(()=>[]), ops:pages.map(()=>[]), tool:"pen", penSeen:false, z:1, zmin:1};
+const inkDbKey=()=>"ink:"+PROJECT.id+":"+S.cur;
+/* 保存した書き込みを読み込む（端末の中のデータでも形を確かめてから使う） */
+function sanitizeInk(v){
+  const out={};
+  if(!v||typeof v!=="object"||!v.pages||typeof v.pages!=="object") return out;
+  for(const [rk,pg] of Object.entries(v.pages).slice(0,500)){
+    const k=safeId(rk); if(!k||!pg||!Array.isArray(pg.strokes)) continue;
+    const w=safeNum(pg.w,0), list=[];
+    for(const s of pg.strokes.slice(0,5000)){
+      if(!s||!Array.isArray(s.p)||!/^#[0-9a-f]{6}$/i.test(s.c||"")) continue;
+      const p=s.p.slice(0,60000).map(x=>safeNum(x,0)); if(p.length<3) continue; p.length-=p.length%3;
+      list.push({t:s.t==="mk"?"mk":"pen", c:s.c, a:Math.max(0.1,Math.min(1,safeNum(s.a,1))), p});
+    }
+    out[k]={w, strokes:list};
+  }
+  return out;
+}
+async function openInk(pages, name){
+  let saved={}; try{ saved=sanitizeInk(await dbGet("kv",inkDbKey())); }catch(e){}
+  const strokes=pages.map(c=>{ const sv=c.inkKey&&saved[c.inkKey]; if(!sv) return [];
+    const f=sv.w? c.width/sv.w : 1;   /* ページの大きさが変わっていたら合わせる */
+    return f===1? sv.strokes : sv.strokes.map(s=>Object.assign({},s,{p:s.p.map(x=>x*f)})); });
+  INK={pages, name, key:inkDbKey(), saved, cur:0, strokes, ops:pages.map(()=>[]), redo:pages.map(()=>[]), tool:"pen", penSeen:false, z:1, zmin:1};
   inkShow(0);
+  if(inkCount()) toast("前回の書き込みを読み込みました");
 }
 function inkCount(){ return INK.strokes.reduce((n,a)=>n+a.length,0); }
-function inkBar(){
-  const n=INK.pages.length, t=INK.tool, on=k=>t===k?' class="on"':"";
-  return `<b>手書き　${INK.cur+1} / ${n}ページ</b><button data-ink="nav" data-d="-1" aria-label="前のページ">‹</button><button data-ink="nav" data-d="1" aria-label="次のページ">›</button>`+
-    `<button data-ink="tool" data-t="erase"${on("erase")}>消す</button>`+
-    `<button data-ink="undo">戻す</button><button data-ink="all">全体</button><button data-ink="cancel">やめる</button><button data-ink="save" class="go">保存</button>`;
+/* 端末に保存（書くたびに少し待ってからまとめて保存） */
+let inkSaveTimer=null;
+function inkPersist(now){
+  clearTimeout(inkSaveTimer); if(!INK) return;
+  const run=()=>{ const pages=Object.assign({},INK.saved);
+    INK.pages.forEach((c,k)=>{ if(!c.inkKey) return; if(INK.strokes[k].length) pages[c.inkKey]={w:c.width, strokes:INK.strokes[k]}; else delete pages[c.inkKey]; });
+    INK.saved=pages;
+    if(Object.keys(pages).length) dbPut("kv",INK.key,{v:1,pages}); else dbDel("kv",INK.key); };
+  if(now) run(); else inkSaveTimer=setTimeout(run,600);
 }
-/* ペンの色・太さ・透明度（選ぶとペンに戻る。次に書き出すときも同じ設定で始まる） */
+function inkBar(){
+  const n=INK.pages.length;
+  return `<b>手書き　${INK.cur+1} / ${n}ページ</b><button data-ink="nav" data-d="-1" aria-label="前のページ">‹</button><button data-ink="nav" data-d="1" aria-label="次のページ">›</button>`+
+    `<button data-ink="undo">戻す</button><button data-ink="redo">進む</button><button data-ink="all">全体</button><button data-ink="cancel">閉じる</button><button data-ink="save" class="go">PDF保存</button>`;
+}
+/* 道具（ペン・マーカー・消しゴム）と、その道具の色・太さなど（次に書き出すときも同じ設定で始まる） */
 function inkOpts(){
-  const pen=INK.tool==="pen", P=INK_PREF, on=(k,v)=>pen&&P[k]===v?' class="on"':"";
-  return INK_COLORS.map(([k,l,c])=>`<button data-ink="pen" data-k="color" data-v="${k}"${on("color",k)}><i class="ink-dot" style="background:${c}"></i>${l}</button>`).join("")+
-    `<span class="ink-sep">太さ</span>`+INK_SIZES.map(([k,l])=>`<button data-ink="pen" data-k="size" data-v="${k}"${on("size",k)}>${l}</button>`).join("")+
-    `<span class="ink-sep">透明度</span>`+INK_ALPHAS.map(([k,l])=>`<button data-ink="pen" data-k="alpha" data-v="${k}"${on("alpha",k)}>${l}</button>`).join("");
+  const P=INK_PREF, t=INK.tool, on=(k,v)=>P[k]===v?' class="on"':"";
+  const btns=(list,k,dot)=>list.map(([v,l,c])=>`<button data-ink="pref" data-k="${k}" data-v="${v}"${on(k,v)}>${dot?`<i class="ink-dot" style="background:${c}"></i>`:""}${l}</button>`).join("");
+  const tools=INK_TOOLS.map(([k,l])=>`<button data-ink="tool" data-t="${k}"${t===k?' class="on"':""}>${l}</button>`).join("");
+  let o="";
+  if(t==="pen") o=btns(INK_COLORS,"color",1)+`<span class="ink-sep">太さ</span>`+btns(INK_SIZES,"size")+`<span class="ink-sep">透明度</span>`+btns(INK_ALPHAS,"alpha");
+  else if(t==="marker") o=btns(INK_MCOLORS,"mcolor",1)+`<span class="ink-sep">太さ</span>`+btns(INK_MSIZES,"msize");
+  else if(t==="cut") o=`<span class="ink-sep">大きさ</span>`+btns(INK_ESIZES,"esize")+`<span class="ink-sep">なぞった所だけ消えます</span>`;
+  else o=`<span class="ink-sep">触れた線をまるごと消します</span>`;
+  return `<div class="ink-row">${tools}</div><div class="ink-row">${o}</div>`;
 }
 function inkTools(){ $("#inkbar").innerHTML=inkBar(); $("#inkopts").innerHTML=inkOpts(); }
 function inkShow(k){
   INK.cur=k; const c=INK.pages[k];
   $("#overlay").innerHTML=`<div class="sv ink" role="dialog" aria-modal="true" aria-label="PDF帳票の手書き">
     <div class="sv-bar" id="inkbar">${inkBar()}</div>
-    <div class="sv-tabs ink-opts" id="inkopts">${inkOpts()}</div>
-    <div class="sv-box" id="inkbox"><div class="sv-wrap" id="inkwrap"><canvas class="ink-layer" id="inkcv"></canvas><canvas class="ink-layer" id="inklive"></canvas></div></div>
-    <div class="sv-hint">指かペンで書き込めます。2本指で拡大・移動。書き込みはこの PDF にだけ入ります。</div></div>`;
-  const box=$("#inkbox"), wrap=$("#inkwrap"), cv=$("#inkcv"), live=$("#inklive");
-  c.classList.add("ink-page"); wrap.insertBefore(c, cv);
-  cv.width=live.width=c.width; cv.height=live.height=c.height;
-  INK.box=box; INK.wrap=wrap; INK.cv=cv; INK.g=cv.getContext("2d"); INK.live=live; INK.lg=live.getContext("2d");
+    <div class="ink-opts" id="inkopts">${inkOpts()}</div>
+    <div class="sv-box" id="inkbox"><div class="sv-wrap" id="inkwrap"><canvas class="ink-layer ink-mk" id="inkhl"></canvas><canvas class="ink-layer" id="inkcv"></canvas><canvas class="ink-layer" id="inklive"></canvas></div></div>
+    <div class="sv-hint">指かペンで書き込めます。2本指で拡大・移動。書き込みはこの端末に残り、PDF にだけ入ります（検査記録には入りません）。</div></div>`;
+  const box=$("#inkbox"), wrap=$("#inkwrap"), hl=$("#inkhl"), cv=$("#inkcv"), live=$("#inklive");
+  c.classList.add("ink-page"); wrap.insertBefore(c, hl);
+  for(const x of [hl,cv,live]){ x.width=c.width; x.height=c.height; }
+  Object.assign(INK,{box, wrap, hl, hg:hl.getContext("2d"), cv, g:cv.getContext("2d"), live, lg:live.getContext("2d")});
   inkRedraw(); inkApply(0); box.scrollLeft=0; box.scrollTop=0;
   inkGestures(box, live);
 }
@@ -1060,25 +1106,61 @@ function inkApply(z){
   INK.wrap.style.width=c.width*z+"px"; INK.wrap.style.height=c.height*z+"px";
 }
 function inkZoomAt(z,px,py){ const b=INK.box, cx=(b.scrollLeft+px)/INK.z, cy=(b.scrollTop+py)/INK.z; inkApply(z); b.scrollLeft=cx*INK.z-px; b.scrollTop=cy*INK.z-py; }
-function inkLine(g,s){
-  g.save(); g.globalAlpha=s.a??1; g.strokeStyle=s.c; g.fillStyle=s.c; g.lineWidth=s.w; g.lineCap="round"; g.lineJoin="round";
-  const p=s.p;
-  if(p.length<=2){ g.beginPath(); g.arc(p[0],p[1],s.w/2,0,Math.PI*2); g.fill(); }
-  else { g.beginPath(); g.moveTo(p[0],p[1]); for(let i=2;i<p.length;i+=2) g.lineTo(p[i],p[i+1]); g.stroke(); }
-  g.restore();
+/* 線の形：点ごとの円と、隣の点どうしをつなぐ四角形を同じ向きで1つの道にして塗る。
+   重なっても1回しか塗られないので、透明度があっても重なりが濃くならない */
+function inkSeg(g,x1,y1,r1,x2,y2,r2){
+  const dx=x2-x1, dy=y2-y1, L=Math.hypot(dx,dy); if(L<1e-6) return;
+  const nx=-dy/L, ny=dx/L;
+  let q=[x1+nx*r1,y1+ny*r1, x2+nx*r2,y2+ny*r2, x2-nx*r2,y2-ny*r2, x1-nx*r1,y1-ny*r1];
+  let A=0; for(let i=0;i<8;i+=2){ const j=(i+2)%8; A+=q[i]*q[j+1]-q[j]*q[i+1]; }
+  if(A<0) q=[q[6],q[7],q[4],q[5],q[2],q[3],q[0],q[1]];
+  g.moveTo(q[0],q[1]); g.lineTo(q[2],q[3]); g.lineTo(q[4],q[5]); g.lineTo(q[6],q[7]); g.closePath();
 }
-function inkRedraw(){ const g=INK.g; g.clearRect(0,0,INK.cv.width,INK.cv.height); INK.strokes[INK.cur].forEach(s=>inkLine(g,s)); }
-/* 消しゴム：触れた線をまるごと消す */
-function inkErase(x,y){
-  const list=INK.strokes[INK.cur], r=Math.max(10,18/INK.z);
-  const near=s=>{ const p=s.p, rr=r+s.w/2;
-    if(p.length<=2) return Math.hypot(p[0]-x,p[1]-y)<=rr;
-    for(let i=2;i<p.length;i+=2){ const ax=p[i-2], ay=p[i-1], dx=p[i]-ax, dy=p[i+1]-ay, L=dx*dx+dy*dy;
-      const t=L? Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/L)) : 0;
-      if(Math.hypot(ax+dx*t-x, ay+dy*t-y)<=rr) return true; }
-    return false; };
-  const hit=list.filter(near); if(!hit.length) return;
-  INK.strokes[INK.cur]=list.filter(s=>!hit.includes(s)); INK.ops[INK.cur].push({del:hit}); inkRedraw();
+function inkDot(g,x,y,r){ g.moveTo(x+r,y); g.arc(x,y,r,0,Math.PI*2,false); g.closePath(); }
+function inkPath(g,p){
+  g.beginPath(); inkDot(g,p[0],p[1],p[2]);
+  for(let i=3;i<p.length;i+=3){ inkSeg(g,p[i-3],p[i-2],p[i-1],p[i],p[i+1],p[i+2]); inkDot(g,p[i],p[i+1],p[i+2]); }
+}
+function inkLine(g,s,alpha){ g.save(); g.globalAlpha=alpha??(s.a??1); g.fillStyle=s.c; inkPath(g,s.p); g.fill("nonzero"); g.restore(); }
+function inkRedraw(){
+  const {g,hg,cv}=INK; g.clearRect(0,0,cv.width,cv.height); hg.clearRect(0,0,cv.width,cv.height);
+  INK.strokes[INK.cur].forEach(s=>s.t==="mk"? inkLine(hg,s,1) : inkLine(g,s));
+}
+/* 書いた後の変更は {add:[追加した線], rm:[消した線]} で記録し、戻す・進むに使う */
+function inkCommit(op){
+  if(!op.add.length && !op.rm.length) return;
+  INK.ops[INK.cur].push(op); INK.redo[INK.cur]=[]; inkPersist();
+}
+function inkSwap(rm,add){ const k=INK.cur; INK.strokes[k]=INK.strokes[k].filter(s=>!rm.includes(s)).concat(add); }
+const inkNear=(s,x,y,R)=>{ const p=s.p;
+  for(let i=0;i<p.length;i+=3){
+    if(Math.hypot(p[i]-x,p[i+1]-y)<=R+p[i+2]) return true;
+    if(i>=3){ const ax=p[i-3], ay=p[i-2], dx=p[i]-ax, dy=p[i+1]-ay, L=dx*dx+dy*dy, t=L? Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/L)) : 0;
+      if(Math.hypot(ax+dx*t-x, ay+dy*t-y)<=R+Math.max(p[i-1],p[i+2])) return true; } }
+  return false; };
+/* 線を消す：触れた線をまるごと消す */
+function inkErase(x,y,op){
+  const R=Math.max(10,18/INK.z), hit=INK.strokes[INK.cur].filter(s=>inkNear(s,x,y,R)); if(!hit.length) return;
+  inkSwap(hit,[]); hit.forEach(s=>{ const i=op.add.indexOf(s); if(i>=0) op.add.splice(i,1); else op.rm.push(s); }); inkRedraw();
+}
+/* 部分消し：円の中の部分だけを消し、残りを別々の線に分ける */
+function inkCut(x,y,R,op){
+  const hit=INK.strokes[INK.cur].filter(s=>inkNear(s,x,y,R)); if(!hit.length) return;
+  const pieces=[];
+  for(const s of hit){
+    const p=s.p, step=Math.max(1,R/3), q=[];   /* 円より細かく点を足してから切る */
+    for(let i=0;i<p.length;i+=3){
+      if(i>=3){ const ax=p[i-3], ay=p[i-2], ar=p[i-1], n=Math.floor(Math.hypot(p[i]-ax,p[i+1]-ay)/step);
+        for(let j=1;j<n;j++){ const t=j/n; q.push(ax+(p[i]-ax)*t, ay+(p[i+1]-ay)*t, ar+(p[i+2]-ar)*t); } }
+      q.push(p[i],p[i+1],p[i+2]); }
+    let run=[];
+    const flush=()=>{ if(run.length) pieces.push(Object.assign({},s,{p:run})); run=[]; };
+    for(let i=0;i<q.length;i+=3){ if(Math.hypot(q[i]-x,q[i+1]-y)<=R+q[i+2]*0.5) flush(); else run.push(q[i],q[i+1],q[i+2]); }
+    flush();
+  }
+  inkSwap(hit,pieces);
+  hit.forEach(s=>{ const i=op.add.indexOf(s); if(i>=0) op.add.splice(i,1); else op.rm.push(s); }); op.add.push(...pieces);
+  inkRedraw();
 }
 function inkGestures(box, cv){
   const pts=new Map(); let st=null, pan=null, pinch=null, hold=false;
@@ -1088,23 +1170,39 @@ function inkGestures(box, cv){
   const local=p=>{ const r=box.getBoundingClientRect(); return {x:p.x-r.left, y:p.y-r.top}; };
   const startPinch=()=>{ const [a,b]=touches(), m=local({x:(a.x+b.x)/2, y:(a.y+b.y)/2});
     pinch={d:Math.hypot(a.x-b.x,a.y-b.y)||1, z:INK.z, cx:(box.scrollLeft+m.x)/INK.z, cy:(box.scrollTop+m.y)/INK.z}; };
+  /* 筆圧：Apple Pencil だけ使う（指・マウスは一定の太さ）。押す強さ 0.5 前後で「太さ」の設定どおりになる */
+  const radius=(e,s)=>{ if(s.t==="mk") return s.base/2;
+    const pr=e.pointerType==="pen" && e.pressure>0 ? e.pressure : 0.5;
+    s.pr=s.pr==null? pr : s.pr+(pr-s.pr)*0.3;
+    return Math.max(0.6, s.base/2*(0.35+1.3*s.pr)); };
+  /* 手ぶれ止め：入力点を少し遅れて追いかける（拡大しているほど弱くする） */
+  const smooth=(s,x,y)=>{ const k=Math.min(0.75,0.4+INK.z*0.25); s.sx=s.sx==null? x : s.sx+(x-s.sx)*k; s.sy=s.sy==null? y : s.sy+(y-s.sy)*k; return [s.sx,s.sy]; };
+  const addPt=(s,x,y,r)=>{ const p=s.p, n=p.length;
+    if(n && Math.hypot(p[n-3]-x,p[n-2]-y)<0.6) return;
+    p.push(x,y,r); const g=INK.lg; g.beginPath();
+    if(n) inkSeg(g,p[n-3],p[n-2],p[n-1],x,y,r); inkDot(g,x,y,r); g.fill("nonzero"); };
+  const ring=(x,y,R)=>{ liveClear(); const g=INK.lg; g.save(); g.strokeStyle="#ff9f1a"; g.lineWidth=2/INK.z; g.beginPath(); g.arc(x,y,R,0,Math.PI*2); g.stroke(); g.restore(); };
+  const eraseAt=(x,y)=>{ if(st.cut){ const R=inkPick(INK_ESIZES,INK_PREF.esize)[2]/INK.z; inkCut(x,y,R,st.op); ring(x,y,R); } else inkErase(x,y,st.op); };
   cv.addEventListener("pointerdown", e=>{
     e.preventDefault(); try{ cv.setPointerCapture(e.pointerId); }catch(_){}
     pts.set(e.pointerId,{x:e.clientX,y:e.clientY,type:e.pointerType});
     if(e.pointerType==="pen") INK.penSeen=true;
     if(e.pointerType==="touch"){
       const n=touches().length;
-      if(n>=2){ if(st&&st.type==="touch"){ st=null; liveClear(); } pan=null; hold=true; startPinch(); return; }
+      if(n>=2){ if(st&&st.type==="touch"){ if(st.op) inkCommit(st.op); st=null; liveClear(); } pan=null; hold=true; startPinch(); return; }
       if(hold) return;
       if(INK.penSeen){ pan={id:e.pointerId,x:e.clientX,y:e.clientY,sl:box.scrollLeft,st:box.scrollTop}; return; }
     }
     if(st) return;
-    const [x,y]=pos(e);
-    if(INK.tool==="erase"){ st={id:e.pointerId,type:e.pointerType,erase:true}; inkErase(x,y); return; }
-    const w=INK.pages[INK.cur].width/2480*inkPick(INK_SIZES,INK_PREF.size)[2], a=inkPick(INK_ALPHAS,INK_PREF.alpha)[2];
-    /* 書いている線は上の重ね用 canvas に不透明で描き、透明度は canvas ごと付ける（線の重なりが濃くならない） */
-    st={id:e.pointerId,type:e.pointerType,s:{c:inkPick(INK_COLORS,INK_PREF.color)[2],w,a,p:[x,y]}};
-    INK.live.style.opacity=a; inkLine(INK.lg,Object.assign({},st.s,{a:1}));
+    const [x,y]=pos(e), t=INK.tool;
+    if(t==="erase"||t==="cut"){ st={id:e.pointerId,type:e.pointerType,cut:t==="cut",op:{add:[],rm:[]}}; eraseAt(x,y); return; }
+    const mk=t==="marker", P=INK_PREF, w=INK.pages[INK.cur].width/2480;
+    const s={t:mk?"mk":"pen", c:inkPick(mk?INK_MCOLORS:INK_COLORS, mk?P.mcolor:P.color)[2], a:mk?1:inkPick(INK_ALPHAS,P.alpha)[2], p:[],
+      base:w*inkPick(mk?INK_MSIZES:INK_SIZES, mk?P.msize:P.size)[2]};
+    /* 書いている線は一番上の canvas に不透明で描き、透明度・マーカーの掛け合わせは canvas ごと付ける */
+    Object.assign(INK.live.style,{opacity:s.a, mixBlendMode:mk?"multiply":"normal"}); INK.lg.fillStyle=s.c;
+    st={id:e.pointerId,type:e.pointerType,s};
+    const [sx,sy]=smooth(s,x,y); addPt(s,sx,sy,radius(e,s));
   });
   cv.addEventListener("pointermove", e=>{
     const q=pts.get(e.pointerId); if(!q) return; q.x=e.clientX; q.y=e.clientY;
@@ -1112,15 +1210,19 @@ function inkGestures(box, cv){
       inkApply(pinch.z*Math.hypot(a.x-b.x,a.y-b.y)/pinch.d); box.scrollLeft=pinch.cx*INK.z-m.x; box.scrollTop=pinch.cy*INK.z-m.y; return; }
     if(pan && pan.id===e.pointerId){ box.scrollLeft=pan.sl-(e.clientX-pan.x); box.scrollTop=pan.st-(e.clientY-pan.y); return; }
     if(!st || st.id!==e.pointerId) return;
-    const evs=e.getCoalescedEvents? e.getCoalescedEvents() : [e];
+    const evs=e.getCoalescedEvents? e.getCoalescedEvents() : [];
     for(const ev of (evs.length?evs:[e])){ const [x,y]=pos(ev);
-      if(st.erase){ inkErase(x,y); continue; }
-      const p=st.s.p, g=INK.lg; p.push(x,y);
-      g.save(); g.strokeStyle=st.s.c; g.lineWidth=st.s.w; g.lineCap="round"; g.beginPath(); g.moveTo(p[p.length-4],p[p.length-3]); g.lineTo(x,y); g.stroke(); g.restore(); }
+      if(st.op){ eraseAt(x,y); continue; }
+      const [sx,sy]=smooth(st.s,x,y); addPt(st.s,sx,sy,radius(ev,st.s)); }
   });
   const up=e=>{
     pts.delete(e.pointerId);
-    if(st && st.id===e.pointerId){ if(!st.erase && e.type!=="pointercancel"){ INK.strokes[INK.cur].push(st.s); INK.ops[INK.cur].push({add:st.s}); inkLine(INK.g,st.s); } st=null; liveClear(); }
+    if(st && st.id===e.pointerId){
+      if(st.op) inkCommit(st.op);
+      else if(e.type!=="pointercancel"){ const s=st.s, [x,y]=pos(e); addPt(s,x,y,radius(e,s));   /* 最後は指を離した所まで引く */
+        delete s.sx; delete s.sy; delete s.pr; delete s.base;
+        INK.strokes[INK.cur].push(s); inkCommit({add:[s],rm:[]}); s.t==="mk"? inkLine(INK.hg,s,1) : inkLine(INK.g,s); }
+      st=null; liveClear(); }
     if(pan && pan.id===e.pointerId) pan=null;
     if(touches().length<2) pinch=null;
     if(!touches().length) hold=false;
@@ -1130,27 +1232,37 @@ function inkGestures(box, cv){
   ["gesturestart","gesturechange","gestureend"].forEach(ev=>box.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
   box.addEventListener("wheel",e=>{ if(!e.ctrlKey) return; e.preventDefault(); const r=box.getBoundingClientRect(); inkZoomAt(INK.z*Math.exp(-e.deltaY*0.01), e.clientX-r.left, e.clientY-r.top); },{passive:false});
 }
-function inkClose(){ $("#overlay").innerHTML=""; INK=null; }
+function inkClose(){ if(INK) inkPersist(true); $("#overlay").innerHTML=""; INK=null; }
+/* ページの絵の写しに書き込みを重ねる（マーカーは別の層にまとめてから掛け合わせる） */
+function inkCompose(c, list){
+  if(!list.length) return c;
+  const o=pdfCanvas(c.width,c.height), g=o.getContext("2d"); g.drawImage(c,0,0);
+  const mk=list.filter(s=>s.t==="mk");
+  if(mk.length){ const h=document.createElement("canvas"); h.width=c.width; h.height=c.height; const hg=h.getContext("2d"); mk.forEach(s=>inkLine(hg,s,1));
+    g.save(); g.globalCompositeOperation="multiply"; g.drawImage(h,0,0); g.restore(); }
+  list.filter(s=>s.t!=="mk").forEach(s=>inkLine(g,s));
+  return o;
+}
 document.addEventListener("click", async e=>{
   const el=e.target.closest("[data-ink]"); if(!el||!INK) return;
-  const a=el.dataset.ink;
-  if(a==="nav"){ const k=INK.cur+(+el.dataset.d); if(k<0||k>=INK.pages.length){ toast(k<0?"最初のページです":"最後のページです"); return; } inkShow(k); return; }
-  if(a==="tool"){ INK.tool=INK.tool===el.dataset.t?"pen":el.dataset.t; inkTools(); return; }
-  if(a==="pen"){ INK_PREF[el.dataset.k]=el.dataset.v; INK.tool="pen"; inkTools(); try{ localStorage.setItem("inkPref",JSON.stringify(INK_PREF)); }catch(e){} return; }
-  if(a==="undo"){ const op=INK.ops[INK.cur].pop(); if(!op){ toast("戻せる書き込みがありません"); return; }
-    if(op.add) INK.strokes[INK.cur]=INK.strokes[INK.cur].filter(s=>s!==op.add); else INK.strokes[INK.cur].push(...op.del);
-    inkRedraw(); return; }
+  const a=el.dataset.ink, k=INK.cur;
+  if(a==="nav"){ const n=k+(+el.dataset.d); if(n<0||n>=INK.pages.length){ toast(n<0?"最初のページです":"最後のページです"); return; } inkShow(n); return; }
+  if(a==="tool"){ INK.tool=el.dataset.t; inkTools(); return; }
+  if(a==="pref"){ INK_PREF[el.dataset.k]=el.dataset.v; inkTools(); try{ localStorage.setItem("inkPref",JSON.stringify(INK_PREF)); }catch(err){} return; }
+  if(a==="undo"||a==="redo"){
+    const from=a==="undo"?INK.ops[k]:INK.redo[k], to=a==="undo"?INK.redo[k]:INK.ops[k], op=from.pop();
+    if(!op){ toast(a==="undo"?"戻せる書き込みがありません":"進める書き込みがありません"); return; }
+    if(a==="undo") inkSwap(op.add,op.rm); else inkSwap(op.rm,op.add);
+    to.push(op); inkRedraw(); inkPersist(); return; }
   if(a==="all"){ inkApply(0); INK.box.scrollLeft=0; INK.box.scrollTop=0; return; }
-  if(a==="cancel"){ if(inkCount() && !confirm("書き込みを捨てて閉じますか？")) return; inkClose(); return; }
+  if(a==="cancel"){ const had=inkCount(); inkClose(); if(had) toast("書き込みはこの端末に残しました"); return; }
   if(a==="save"){
     if(!window.jspdf){ toast("PDF作成の部品を読み込み中です。電波のある場所で少し待ってから押してください"); return; }
     el.disabled=true; el.textContent="作成中…";
     try{
-      /* 書き込みをページの絵の写しに重ねる（失敗しても手書きの画面はそのまま残す） */
-      const out=INK.pages.map((c,k)=>{ if(!INK.strokes[k].length) return c;
-        const o=pdfCanvas(c.width,c.height), g=o.getContext("2d"); g.drawImage(c,0,0); INK.strokes[k].forEach(s=>inkLine(g,s)); return o; });
+      const out=INK.pages.map((c,i)=>inkCompose(c, INK.strokes[i]));   /* 失敗しても手書きの画面はそのまま残す */
       await savePdf(out, INK.name); inkClose();
-    }catch(err){ console.error(err); toast("PDFを作成できませんでした："+(err&&err.message||err)); el.disabled=false; el.textContent="保存"; }
+    }catch(err){ console.error(err); toast("PDFを作成できませんでした："+(err&&err.message||err)); el.disabled=false; el.textContent="PDF保存"; }
   }
 });
 async function exportXlsx(btn){
