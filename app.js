@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.27-10";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.27-11";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -139,7 +139,9 @@ const QUICK2 = ["是正すること。","撤去すること。","適正なあき
 const mem = new Map(); let idb=null;
 function openDB(){return new Promise(res=>{try{const r=indexedDB.open("haikin-kensa",1);r.onupgradeneeded=()=>{r.result.createObjectStore("kv");r.result.createObjectStore("photos")};r.onsuccess=()=>{idb=r.result;res()};r.onerror=()=>res()}catch(e){res()}})}
 function dbGet(store,k){return new Promise(res=>{if(!idb)return res(mem.get(store+k));try{const q=idb.transaction(store).objectStore(store).get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>res(mem.get(store+k))}catch(e){res(mem.get(store+k))}})}
-function dbPut(store,k,v){mem.set(store+k,v);if(!idb)return;try{idb.transaction(store,"readwrite").objectStore(store).put(v,k)}catch(e){}}
+/* 端末の空き容量が足りないなどで保存できなかったときは知らせる（黙って消えないように。続けて出さないよう30秒あける） */
+let dbWarnAt=0; function dbWarn(){ const t=Date.now(); if(t-dbWarnAt<30000) return; dbWarnAt=t; toastAct("保存できませんでした。端末の空き容量を確かめて、バックアップを保存してください","",null,6000); }
+function dbPut(store,k,v){mem.set(store+k,v);if(!idb)return;try{const tx=idb.transaction(store,"readwrite"); tx.onabort=tx.onerror=dbWarn; tx.objectStore(store).put(v,k)}catch(e){dbWarn()}}
 function dbDel(store,k){mem.delete(store+k);if(!idb)return;try{idb.transaction(store,"readwrite").objectStore(store).delete(k)}catch(e){}}
 
 let S = {cur:null, data:{}};
@@ -313,6 +315,7 @@ function viewPlan(){
   const d=D(), i=insp();
   const pins=d.finds.filter(f=>f.pin).map(f=>`<button class="pin ${f.status==="done"?"done":""}" style="left:${safeNum(f.pin.x)}%;top:${safeNum(f.pin.y)}%" data-act="editfind" data-id="${esc(f.id)}" aria-label="指摘${esc(f.no)}">${esc(f.no)}</button>`).join("");
   const pick=UI.pick?`<div class="pickmsg"><span>指摘 ${UI.draft?.no??""} の位置を図面上でタップ</span><button data-act="pickcancel">やめる</button></div>`:"";
+  if(!i.plan) return pick+`<div class="empty">この検査にはキープランの図がありません。</div>`;
   const hs=i.members.map((m,mi)=>{const b=hotspot(i.id,m); if(!b) return "";
     return `<button class="hs ${esc(m.t)}${UI.focus===mi?" focus":""}" data-act="jump" data-i="${mi}" data-s="${memberStat(mi).s}" style="left:${b.l}%;top:${b.t}%;width:${b.w}%;height:${b.h}%" aria-label="${esc(m.sym+" "+m.loc)}"></button>`}).join("");
   return `${pick}<div class="planbar"><span class="note">${esc(i.place)}</span><span class="zoom"><button data-act="zoom" data-z="-1" aria-label="縮小">－</button><button data-act="zoom" data-z="1" aria-label="拡大">＋</button><button data-act="zoomfit" style="width:auto;padding:0 10px">全体</button></span></div>
@@ -482,7 +485,12 @@ function openFindSheet(draft){
     ${draft.isNew?"":`<button class="btn danger" data-act="fdelete">${UI.delArm?"本当に削除する":"この指摘を削除"}</button>`}
   </div></div>`;
   drawSheetThumbs();
-  const onFiles=async e=>{ for(const f of e.target.files){ const id="p"+Date.now()+Math.random().toString(36).slice(2,6); const url=await shrink(f); photoCache.set(id,url); dbPut("photos",id,url); UI.draft.photos.push(id);} e.target.value=""; drawSheetThumbs(); };
+  /* 写真は1件の指摘に20枚まで（保存・バックアップの上限）。縮小している間に入力を閉じたときは足さない */
+  const onFiles=async e=>{ const dr=UI.draft, files=[...e.target.files]; e.target.value="";
+    for(const f of files){ if(dr.photos.length>=20){ toast("写真は1件の指摘に20枚までです"); break; }
+      const id="p"+Date.now()+Math.random().toString(36).slice(2,6); const url=await shrink(f); if(UI.draft!==dr) return;
+      photoCache.set(id,url); dbPut("photos",id,url); dr.photos.push(id); }
+    drawSheetThumbs(); };
   $("#fs-cam").onchange=onFiles; $("#fs-pick").onchange=onFiles;
   $("#fs-text").oninput=e=>{UI.draft.text=e.target.value};
 }
@@ -768,7 +776,10 @@ document.addEventListener("click", async e=>{
   if(a==="rmphoto"){ UI.draft.photos=UI.draft.photos.filter(p=>p!==el.dataset.id); drawSheetThumbs(); return; }
   if(a==="fsave"){ commitDraft(); closeSheet(); render(); toast("指摘を保存しました"); return; }
   if(a==="fcancel"){ cancelDraft(); return; }
-  if(a==="fdelete"){ if(!UI.delArm){UI.delArm=true; el.textContent="本当に削除する"; return;} d.finds=d.finds.filter(f=>f.id!==UI.draft.id); UI.draft=null; save(); closeSheet(); render(); toast("指摘を削除しました"); return; }
+  if(a==="fdelete"){ if(!UI.delArm){UI.delArm=true; el.textContent="本当に削除する"; return;} const dr=UI.draft; d.finds=d.finds.filter(f=>f.id!==dr.id);
+    /* その項目の×はこの指摘のために付けたものなので、ほかに同じ項目の指摘がなければ外す */
+    if(dr.item && dr.mi!=null && d.res[dr.mi+"|"+dr.item]==="ng" && !d.finds.some(f=>f.mi===dr.mi && f.item===dr.item)) delete d.res[dr.mi+"|"+dr.item];
+    UI.draft=null; save(); closeSheet(); render(); toast("指摘を削除しました"); return; }
   if(a==="pickpin"){ UI.pick={returnTab:UI.tab}; closeSheet(); UI.tab="plan"; render(); return; }
   if(a==="pickcancel"){ const back=UI.pick.returnTab; UI.pick=null; UI.tab=back; render(); openFindSheet(UI.draft); return; }
   if(a==="zoom"){ planZoomTo(UI.zoom*Math.pow(1.5,+el.dataset.z)); return; }
@@ -811,13 +822,17 @@ document.addEventListener("click", e=>{
 });
 document.getElementById("tabs").addEventListener("click", e=>{
   const b=e.target.closest("button[data-tab]"); if(!b) return;
-  if(UI.pick){ UI.pick=null; UI.draft=null; }
+  if(UI.pick) abandonPick();
   if(b.dataset.tab==="list" && UI.tab==="list") UI.card=null;
   UI.tab=b.dataset.tab;
   if(UI.tab==="dwg" && !DWG){ ensureDrawings().then(render); return; }
   render();
 });
-document.getElementById("insp-select").addEventListener("change", e=>{ S.cur=e.target.value; UI.card=null; UI.pick=null; UI.flash=null; UI.focus=null; save(); render(); });
+/* 図面で位置を選んでいる途中に別の画面へ移ったときは、指摘の入力を取り消したのと同じに扱う（×だけが残らないように） */
+function abandonPick(){ const dr=UI.draft, d=D(); UI.pick=null;
+  if(dr && dr.isNew && dr.item){ if(dr.prev) d.res[dr.mi+"|"+dr.item]=dr.prev; else delete d.res[dr.mi+"|"+dr.item]; save(); }
+  UI.draft=null; }
+document.getElementById("insp-select").addEventListener("change", e=>{ if(UI.pick) abandonPick(); S.cur=e.target.value; UI.card=null; UI.pick=null; UI.flash=null; UI.focus=null; save(); render(); });
 document.addEventListener("change", e=>{ const k=e.target.dataset?.h; if(k){ D().head[k]=e.target.value; save(); renderTop(); } });
 function toCSV(){
   const d=D(), ms=insp().members, mark={ok:"✓",ng:"×",na:"－"}, out=[];
@@ -918,13 +933,14 @@ document.addEventListener("change", e=>{
     if(!b || b.app!=="haikin-kensa" || !b.data){ toast("このアプリのバックアップではありません"); return; }
     if(b.project && b.project!==PROJECT.id){ toast("別の工事のバックアップです（"+b.project+"）"); return; }
     UI.restore=b;
-    const rows=Object.entries(b.data).map(([id,d])=>{const i=INSPECTIONS.find(x=>x.id===id); const n=Object.keys(d.res||{}).length; return `<li>${esc(i?i.title:id)}：記録 ${n} 項目、指摘 ${d.finds.length} 件${S.data[id]?"（この端末の記録を置き換えます）":""}</li>`}).join("");
+    const rows=Object.entries(b.data).filter(([,d])=>d&&typeof d==="object").map(([id,d])=>{const i=INSPECTIONS.find(x=>x.id===id); const n=Object.keys(d.res||{}).length; return `<li>${esc(i?i.title:id)}：記録 ${n} 項目、指摘 ${(Array.isArray(d.finds)?d.finds:[]).length} 件${S.data[id]?"（この端末の記録を置き換えます）":""}</li>`}).join("");
     $("#overlay").innerHTML=`<div class="scrim" data-act="sheetbg"><div class="sheet"><h3>バックアップの読み込み</h3><p class="note">保存日時：${esc(new Date(b.saved).toLocaleString("ja-JP"))}</p><ul>${rows}</ul><div class="two"><button class="btn" data-act="fclose">やめる</button><button class="btn primary" data-act="restoredo">読み込む</button></div></div></div>`;
   }; r.readAsText(f);
 });
 function loadImg(src){return new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=rej;im.src=src;})}
 async function planWithPins(){
-  const i=insp(), d=D(), im=await loadImg(i.plan);
+  const i=insp(), d=D(); if(!i.plan) return null;   /* キープランの図がない検査 */
+  let im; try{ im=await loadImg(i.plan); }catch(e){ return null; }
   const c=document.createElement("canvas"); c.width=im.naturalWidth; c.height=im.naturalHeight; const g=c.getContext("2d");
   g.fillStyle="#fff"; g.fillRect(0,0,c.width,c.height); g.drawImage(im,0,0);
   const r=Math.max(11, c.width/70);
@@ -970,10 +986,11 @@ async function pdfReportPages(){
   const newPage=(withRight)=>{ c=pdfCanvas(); g=c.getContext("2d"); pages.push(c); y=header(); x0=M; xr=withRight? 1470 : PDF_W-M; };
   newPage(true);
   /* 右側：キープラン（指摘ピン入り）と指摘事項 */
-  const pl=await planWithPins(), plImg=await loadImg(pl.url);
+  const pl=await planWithPins();
   const rx=1510, rw=PDF_W-M-rx; let ry=y;
-  pdfText(g,"キープラン（赤：未是正　緑：是正確認済み）",rx,ry+14,{size:22,bold:true}); ry+=32;
-  const ph=Math.min(rw*pl.h/pl.w, 700); const pw=ph*pl.w/pl.h; g.drawImage(plImg,rx,ry,pw,ph); g.strokeStyle="#555"; g.strokeRect(rx,ry,pw,ph); ry+=ph+24;
+  if(pl){ const plImg=await loadImg(pl.url);
+    pdfText(g,"キープラン（赤：未是正　緑：是正確認済み）",rx,ry+14,{size:22,bold:true}); ry+=32;
+    const ph=Math.min(rw*pl.h/pl.w, 700); const pw=ph*pl.w/pl.h; g.drawImage(plImg,rx,ry,pw,ph); g.strokeStyle="#555"; g.strokeRect(rx,ry,pw,ph); ry+=ph+24; }
   pdfText(g,"指摘事項",rx,ry+14,{size:22,bold:true}); ry+=32;
   const fcols=[60,200,rw-60-200-80-130,80,130];
   const fhead=["No","部材・位置","指摘事項・処理方法","判定","確認日"];
@@ -983,7 +1000,7 @@ async function pdfReportPages(){
   for(const f of d.finds){
     const m=ms[f.mi]||{}; const lines=pdfWrap(g,f.text,fcols[2]-16,20), mlines=pdfWrap(g,(m.sym||"")+" "+(m.loc||"")+"\n"+(f.item||"").replace("/"," "),fcols[1]-12,18);
     const rh=Math.max(lines.length*26,mlines.length*24)+14;
-    if(ry+rh>PDF_H-M){ restFinds.push(f); continue; }
+    if(restFinds.length || ry+rh>PDF_H-M){ restFinds.push(f); continue; }   /* 1件でもはみ出したら、残りは番号順のまま次のページへ */
     let x=rx; const cells=[String(f.no),null,null,f.status==="done"?"OK":"",f.status==="done"?md(f.doneDate):"/"];
     cells.forEach((s,j)=>{ pdfRect(g,x,ry,fcols[j],rh); if(s!=null) pdfText(g,s,x+fcols[j]/2,ry+rh/2,{size:20,align:"center",color:j===3&&s==="OK"?"#17834a":"#111"}); x+=fcols[j]; });
     mlines.forEach((l,k)=>pdfText(g,l,rx+fcols[0]+6,ry+18+k*24,{size:18}));
@@ -1437,8 +1454,9 @@ async function exportXlsx(btn){
     /* 4. キープラン */
     const wk=wb.addWorksheet("キープラン",{pageSetup:{paperSize:8,orientation:"landscape",fitToPage:true,fitToWidth:1,fitToHeight:1}});
     wk.getCell("A1").value=i.title+"　キープラン（赤：未是正　緑：是正確認済み）"; wk.getCell("A1").font={name:"游ゴシック",size:12,bold:true};
-    const pl=await planWithPins(); const pid=wb.addImage({base64:pl.url,extension:"png"}); const pw=1100;
-    wk.addImage(pid,{tl:{col:0,row:1.2},ext:{width:pw,height:Math.round(pw*pl.h/pl.w)}});
+    const pl=await planWithPins();
+    if(pl){ const pid=wb.addImage({base64:pl.url,extension:"png"}); const pw=1100;
+      wk.addImage(pid,{tl:{col:0,row:1.2},ext:{width:pw,height:Math.round(pw*pl.h/pl.w)}}); }
     const buf=await wb.xlsx.writeBuffer();
     await offerFile("配筋検査帳票_"+i.title.replace(/\s+/g,"")+"_"+(h.date||"").replace(/-/g,"")+".xlsx", new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
   }catch(e){ console.error(e); toast("Excelを作成できませんでした："+(e&&e.message||e)); }
