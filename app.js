@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.27-7";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.27-8";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -198,6 +198,14 @@ const esc = s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"
 function today(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
 function md(s){if(!s)return"";const p=s.split("-");return +p[1]+"/"+ +p[2]}
 function toast(t){const e=document.createElement("div");e.className="toast";e.textContent=t;document.body.appendChild(e);setTimeout(()=>e.remove(),1600)}
+/* ボタン付きのお知らせ（「元に戻す」など）。ms 秒たつか押すと消える */
+function toastAct(t,label,fn,ms=5000){
+  document.querySelectorAll(".toast.act").forEach(x=>x.remove());
+  const e=document.createElement("div"); e.className="toast act"; e.setAttribute("role","status");
+  const s=document.createElement("span"); s.textContent=t; e.appendChild(s);
+  if(label){ const b=document.createElement("button"); b.type="button"; b.textContent=label; b.addEventListener("click",()=>{ e.remove(); fn(); }); e.appendChild(b); }
+  document.body.appendChild(e); setTimeout(()=>e.remove(),ms);
+}
 
 function memberStat(mi){
   const d=D(), m=insp().members[mi], keys=itemKeys(m.t);
@@ -255,7 +263,7 @@ function viewList(){
     return `<section class="sec"><h2><span>${SPEC[t].label}</span><span class="num">${done} / ${idx.length}</span></h2><div class="grid">${
       idx.map(i=>{const m=ms[i],st=memberStat(i);return `<button class="mbtn${UI.flash===i?" flash":""}" id="tile-${i}" data-act="open" data-i="${i}" data-s="${st.s}"><span class="st"></span><span class="sym">${esc(m.sym)}</span><span class="loc">${esc(m.loc)}</span></button>`}).join("")}</div></section>`;
   };
-  return `<div class="legend"><span style="--c:var(--line)">未着手</span><span style="--c:var(--part)">途中</span><span style="--c:var(--ok)">完了</span><span style="--c:var(--ng)">指摘あり</span></div>`+typesHere().map(sec).join("");
+  return noticesHTML()+`<div class="legend"><span style="--c:var(--line)">未着手</span><span style="--c:var(--part)">途中</span><span style="--c:var(--ok)">完了</span><span style="--c:var(--ng)">指摘あり</span></div>`+typesHere().map(sec).join("");
 }
 function viewCard(mi){
   const d=D(), ms=insp().members, m=ms[mi], ma=master(m), sp=SPEC[m.t], st=memberStat(mi);
@@ -414,7 +422,7 @@ function viewSheet(){
   <p class="note">書き出したファイルは社内サーバーに保存してください。抜取り検査では、記録のある部材だけを帳票に載せます。</p>
   <div class="two"><button class="btn" data-act="backup">バックアップを保存</button><span class="btn filebtn" style="text-align:center">バックアップを読み込む<input type="file" accept=".json,application/json" id="restore-file" aria-label="バックアップを読み込む"></span></div>
   <div class="two"><button class="btn" data-act="csv">CSVをコピー</button><button class="btn danger" data-act="reset">この検査の記録を削除</button></div>
-  <p class="note">記録はこの端末のブラウザ内だけに保存されます。機種変更の前や、検査が終わるごとにバックアップ（写真込みの .json ファイル）を保存しておくと、別の端末で読み込んで続きを行えます。</p>
+  <p class="note">記録はこの端末のブラウザ内だけに保存されます。機種変更の前や、検査が終わるごとにバックアップ（写真込みの .json ファイル）を保存しておくと、別の端末で読み込んで続きを行えます。<br>バックアップ　${esc(agoText(BK.at))}</p>
   <h3 style="margin:10px 0 4px;font-size:14px">データファイル</h3>
   <p class="note">${esc(PROJECT.name)}　作成日 ${esc(DATA.built||"")}　検査箇所 ${INSPECTIONS.length} 件</p>
   <span class="btn filebtn" style="text-align:center">新しいデータファイルを読み込む<input type="file" id="data-file" aria-label="新しいデータファイルを読み込む"></span>
@@ -686,9 +694,14 @@ document.addEventListener("click", async e=>{
     if(d.res[key]) markFirst(UI.card);
     save(); UI.keepScroll=window.scrollY; render(); return;
   }
-  if(a==="allok"){ itemKeys(ms[UI.card].t).forEach(k=>{const key=UI.card+"|"+k; if(!d.res[key]) d.res[key]="ok";}); markFirst(UI.card); save();
-    const s=memberStat(UI.card); toast(ms[UI.card].sym+"　"+(s.s==="ng"?"指摘あり":"完了"));
-    if(UI.card<ms.length-1){ UI.card++; } render(); return; }
+  if(a==="allok"){ const mi=UI.card, cur=S.cur, u=ms[mi].uid, hadFirst=!!(d.firstAt&&d.firstAt[u]), set=[];
+    itemKeys(ms[mi].t).forEach(k=>{const key=mi+"|"+k; if(!d.res[key]){ d.res[key]="ok"; set.push(key); }}); markFirst(mi); save();
+    const s=memberStat(mi);
+    /* 押し間違えたときのために、数秒だけ「元に戻す」を出す（このボタンで付けた✓だけを外す） */
+    toastAct(ms[mi].sym+"　"+(s.s==="ng"?"指摘あり":"完了"), set.length?"元に戻す":"", ()=>{
+      set.forEach(k=>delete d.res[k]); if(!hadFirst && d.firstAt) delete d.firstAt[u]; save();
+      if(S.cur===cur && UI.tab==="list"){ UI.card=mi; } render(); toast("元に戻しました"); });
+    if(mi<ms.length-1){ UI.card++; } render(); return; }
   if(a==="addfind"){ openFindSheet(newDraft(UI.card,null)); return; }
   if(a==="sect"){ openSectViewer(insp().members[+el.dataset.i]); return; }
   if(a==="svclose"){ $("#overlay").innerHTML=""; SV=null; return; }
@@ -727,6 +740,8 @@ document.addEventListener("click", async e=>{
   if(a==="xlsx"){ exportXlsx(el); return; }
   if(a==="pdf"){ exportPdf(el); return; }
   if(a==="backup"){ exportBackup(); return; }
+  if(a==="bksnooze"){ BK_SNOOZE=Date.now()+12*3600e3; dbPut("kv","bksnooze:"+PROJECT.id,BK_SNOOZE); render(); return; }   /* 12時間は出さない */
+  if(a==="a2hsoff"){ A2HS_OFF=Date.now()+14*864e5; dbPut("kv","a2hsoff",A2HS_OFF); render(); return; }   /* 2週間は出さない */
   if(a==="restoredo"){ const b=UI.restore; UI.restore=null; for(const [rid,u] of Object.entries(b.photos||{})){ const id=safeId(rid), url=safeImg(u); if(!id||!url) continue; photoCache.set(id,url); dbPut("photos",id,url); }
     Object.assign(S.data,fromStoreData(b.data)); save(); closeSheet(); render(); toast("バックアップを読み込みました"); return; }
   if(a==="reset"){   /* 確かめる画面を出し、「本当に削除する」を押したときだけ消す */
@@ -779,18 +794,65 @@ async function saveFile(name, blob){
   let dl=null;
   try{ if(window.claude && window.claude.use) dl=await window.claude.use("downloads"); }catch(e){}
   if(dl){
-    try{ await dl.save({filename:name,data:blob}); toast("保存しました"); }
-    catch(e){ if(e && e.code==="declined") return; toast("保存できませんでした（"+(e&&e.code||"error")+"）"); }
-    return;
+    try{ await dl.save({filename:name,data:blob}); toast("保存しました"); return true; }
+    catch(e){ if(e && e.code==="declined") return false; toast("保存できませんでした（"+(e&&e.code||"error")+"）"); }
+    return false;
   }
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click();
-  setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},3000); toast("保存しました");
+  setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},3000); toast("保存しました"); return true;
 }
+/* 書き出したファイルを渡す。共有できる端末（iPhone・iPad など）では「共有（メール・LINE・ファイルなど）」か「保存」かを選ぶ画面を出す。
+   共有はボタンを押した直後にしか呼べないので、ファイルを作り終えてから改めて押してもらう。onDone は共有・保存できたときに呼ぶ */
+async function offerFile(name, blob, onDone){
+  let file=null; try{ file=new File([blob],name,{type:blob.type||"application/octet-stream"}); }catch(e){}
+  let can=false; try{ can=!!(file && navigator.canShare && navigator.canShare({files:[file]})) && !(window.claude && window.claude.use); }catch(e){}
+  if(!can){ if(await saveFile(name,blob) && onDone) onDone(); return; }
+  UI.offer={name, blob, file, onDone};
+  $("#overlay").innerHTML=`<div class="scrim" data-act="sheetbg"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="of-h"><h3 id="of-h">ファイルができました</h3>
+    <p class="note" style="word-break:break-all">${esc(name)}</p>
+    <button class="btn primary" data-act="offershare">共有（メール・LINE・ファイルなど）</button>
+    <div class="two"><button class="btn" data-act="fclose">閉じる</button><button class="btn" data-act="offersave">この端末に保存</button></div></div></div>`;
+}
+document.addEventListener("click", async e=>{
+  const el=e.target.closest('[data-act="offershare"],[data-act="offersave"]'); if(!el) return;
+  const o=UI.offer; if(!o){ closeSheet(); return; }
+  if(el.dataset.act==="offersave"){ UI.offer=null; closeSheet(); if(await saveFile(o.name,o.blob) && o.onDone) o.onDone(); return; }
+  try{ await navigator.share({files:[o.file], title:o.name}); UI.offer=null; closeSheet(); toast("共有しました"); if(o.onDone) o.onDone(); }
+  catch(err){ if(err && err.name==="AbortError") return; toast("共有できませんでした。「この端末に保存」を使ってください"); }
+});
 async function exportBackup(){
   const ids=new Set(); Object.values(S.data).forEach(d=>d.finds.forEach(f=>f.photos.forEach(p=>ids.add(p))));
   const photos={}; for(const id of ids){ const v=await photo(id); if(v) photos[id]=v; }
   const body=JSON.stringify({app:"haikin-kensa",version:2,project:PROJECT.id,saved:new Date().toISOString(),data:toStore().data,photos});
-  saveFile("配筋検査_バックアップ_"+PROJECT.short+"_"+stamp()+".json", new Blob([body],{type:"application/json"}));
+  const sig=recSig(), n=recCount();
+  offerFile("配筋検査_バックアップ_"+PROJECT.short+"_"+stamp()+".json", new Blob([body],{type:"application/json"}), ()=>{
+    BK={at:Date.now(), sig, n}; dbPut("kv","backup:"+PROJECT.id, BK); if(UI.tab==="sheet"||(UI.tab==="list"&&UI.card==null)) render(); });
+}
+/* ===== バックアップの案内：記録はこの端末の中にだけあるので、変わったのに長く保存していないときに知らせる ===== */
+let BK={at:0, sig:"", n:0}, BK_SNOOZE=0, A2HS_OFF=0;
+function recTotals(){ let r=0,f=0,p=0,dn=0; Object.values(S.data||{}).forEach(d=>{ r+=Object.keys(d.res||{}).length; (d.finds||[]).forEach(x=>{ f++; p+=x.photos.length; if(x.status==="done") dn++; }); }); return [r,f,p,dn]; }
+const recSig=()=>recTotals().join(".");
+const recCount=()=>{ const [r,f,p]=recTotals(); return r+f+p; };
+async function loadBackupInfo(){
+  const v=await dbGet("kv","backup:"+PROJECT.id);
+  BK={at:safeNum(v&&v.at,0), sig:safeStr(v&&v.sig,60), n:safeNum(v&&v.n,0)};
+  BK_SNOOZE=safeNum(await dbGet("kv","bksnooze:"+PROJECT.id),0); A2HS_OFF=safeNum(await dbGet("kv","a2hsoff"),0);
+}
+function backupNeeded(){
+  const n=recCount(); if(!n || recSig()===BK.sig || Date.now()<BK_SNOOZE) return false;
+  return !BK.at ? n>=10 : (Date.now()-BK.at>=2*864e5 || n-BK.n>=30);   /* 未保存なら記録10件から。保存済みなら2日たつか30件増えたら */
+}
+const isStandalone=()=>navigator.standalone===true || !!(window.matchMedia && matchMedia("(display-mode: standalone)").matches);
+const isIOS=()=>/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1);
+function agoText(t){ if(!t) return "まだ保存していません"; const m=Math.floor((Date.now()-t)/60000);
+  return "最後の保存："+(m<60? m+"分前" : m<1440? Math.floor(m/60)+"時間前" : Math.floor(m/1440)+"日前")+"（"+new Date(t).toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})+"）"; }
+function noticesHTML(){
+  let h="";
+  if(backupNeeded()) h+=`<div class="notice"><div><b>バックアップを保存しましょう</b><span>${esc(agoText(BK.at))}。記録はこの端末の中にだけあり、端末をなくすと戻せません。</span></div>
+    <div class="two"><button class="btn" data-act="bksnooze">あとで</button><button class="btn primary" data-act="backup">保存する</button></div></div>`;
+  if(isIOS() && !isStandalone() && Date.now()>A2HS_OFF) h+=`<div class="notice"><div><b>ホーム画面に追加してください</b><span>Safari の共有ボタン（□に↑）→「ホーム画面に追加」。追加して使うと、しばらく開かなくても記録が消されにくくなります。</span></div>
+    <button class="btn" data-act="a2hsoff">閉じる</button></div>`;
+  return h;
 }
 /* データファイルの読み込み */
 document.addEventListener("change", e=>{
@@ -800,7 +862,7 @@ document.addEventListener("change", e=>{
     let ds; try{ ds=JSON.parse(r.result); }catch(err){ toast("データファイルを読めませんでした"); return; }
     if(!ds || ds.format!=="haikin-data" || !ds.inspections){ toast("配筋検査のデータファイルではありません"); return; }
     if(DATA) save();
-    dbPut("kv","dataset",ds); applyData(ds); await loadState(); UI.tab="list"; render();
+    dbPut("kv","dataset",ds); applyData(ds); await loadState(); await loadBackupInfo(); UI.tab="list"; render();
     toast(PROJECT.short+" のデータを読み込みました（"+(ds.built||"")+"）");
   }; r.readAsText(f);
 });
@@ -1008,10 +1070,10 @@ async function exportPdf(btn){
   }catch(e){ console.error(e); toast("PDFを作成できませんでした："+(e&&e.message||e)); }
   finally{ btn.disabled=false; btn.textContent=old; }
 }
-async function savePdf(pages, name){
+function pdfBlob(pages){
   const doc=new window.jspdf.jsPDF({orientation:"landscape",unit:"mm",format:"a3",compress:true});
   pages.forEach((c,k)=>{ if(k) doc.addPage("a3","landscape"); doc.addImage(c.toDataURL("image/jpeg",0.85),"JPEG",0,0,420,297); });
-  await saveFile(name, doc.output("blob"));
+  return doc.output("blob");
 }
 
 /* ===== PDF帳票の手書き：書き出す前にページごとに指・ペンで書き込み、ページの絵に重ねて PDF にする =====
@@ -1261,7 +1323,7 @@ document.addEventListener("click", async e=>{
     el.disabled=true; el.textContent="作成中…";
     try{
       const out=INK.pages.map((c,i)=>inkCompose(c, INK.strokes[i]));   /* 失敗しても手書きの画面はそのまま残す */
-      await savePdf(out, INK.name); inkClose();
+      const blob=pdfBlob(out), name=INK.name; inkClose(); await offerFile(name, blob);
     }catch(err){ console.error(err); toast("PDFを作成できませんでした："+(err&&err.message||err)); el.disabled=false; el.textContent="PDF保存"; }
   }
 });
@@ -1326,7 +1388,7 @@ async function exportXlsx(btn){
     const pl=await planWithPins(); const pid=wb.addImage({base64:pl.url,extension:"png"}); const pw=1100;
     wk.addImage(pid,{tl:{col:0,row:1.2},ext:{width:pw,height:Math.round(pw*pl.h/pl.w)}});
     const buf=await wb.xlsx.writeBuffer();
-    await saveFile("配筋検査帳票_"+i.title.replace(/\s+/g,"")+"_"+(h.date||"").replace(/-/g,"")+".xlsx", new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
+    await offerFile("配筋検査帳票_"+i.title.replace(/\s+/g,"")+"_"+(h.date||"").replace(/-/g,"")+".xlsx", new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
   }catch(e){ console.error(e); toast("Excelを作成できませんでした："+(e&&e.message||e)); }
   finally{ btn.disabled=false; btn.textContent=old; }
 }
@@ -1349,6 +1411,6 @@ try{ navigator.storage && navigator.storage.persist && navigator.storage.persist
   $("#view").innerHTML=`<p class="note" style="text-align:center;padding:40px 0">読み込んでいます…</p>`;
   await openDB();
   const ds=await dbGet("kv","dataset");
-  if(ds && ds.format==="haikin-data"){ try{ applyData(ds); await loadState(); }catch(e){ console.error(e); DATA=null; } }
+  if(ds && ds.format==="haikin-data"){ try{ applyData(ds); await loadState(); await loadBackupInfo(); }catch(e){ console.error(e); DATA=null; } }
   render();
 })();
