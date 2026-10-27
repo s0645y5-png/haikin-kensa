@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.27-11";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.27-12";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -752,8 +752,8 @@ document.addEventListener("click", async e=>{
     toastAct(ms[mi].sym+"　"+(s.s==="ng"?"指摘あり":"完了"), set.length?"元に戻す":"", ()=>{
       set.forEach(k=>{ if(d.res[k]==="ok") delete d.res[k]; });   /* その後に自分で変えた項目は残す */
       if(!hadFirst && d.firstAt && !itemKeys(ms[mi].t).some(k=>d.res[mi+"|"+k])) delete d.firstAt[u]; save();
-      if(S.cur===cur && UI.tab==="list"){ UI.card=mi; } render(); toast("元に戻しました"); });
-    if(mi<ms.length-1){ UI.card++; } render(); return; }
+      if(S.cur===cur && UI.tab==="list" && UI.card===mi) UI.keepScroll=window.scrollY; render(); toast("元に戻しました"); });
+    UI.keepScroll=window.scrollY; render(); return; }   /* 次の部材へは進まず、同じ部材のまま（位置もそのまま） */
   if(a==="addfind"){ openFindSheet(newDraft(UI.card,null)); return; }
   if(a==="sect"){ openSectViewer(insp().members[+el.dataset.i]); return; }
   if(a==="svclose"){ $("#overlay").innerHTML=""; SV=null; return; }
