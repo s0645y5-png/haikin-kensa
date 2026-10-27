@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.27-4";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.27-5";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -73,7 +73,7 @@ const SPEC = {
     {g:"スタラップ", items:["径","本数","ピッチ"], dv:m=>m.stp},
     {g:"梁貫通", items:["型・径","本数","孔際補強"]},
     {g:"共通", items:["鉄筋のあき","かぶり厚さ"]}],
-    design:m=>[["B×D",m.bd],["上端筋",m.top],["下端筋",m.bot],["STP",m.stp],["腹筋","18-D13"],["孔際補強",m.sl],["補強要領",{fig:"梁貫通", text:"梁貫通補強要領"}]]},
+    design:m=>[["B×D",m.bd],["上端筋",m.top],["下端筋",m.bot],["STP",m.stp],["腹筋","18-D13"],["貫通補強",m.sl],["補強要領",{fig:"梁貫通", text:"梁貫通補強要領"}]]},
   col:{label:"柱", groups:[
     {g:"断面サイズ", items:["X方向","Y方向"], dv:m=>m.s},
     {g:"主筋", items:["径","本数","芯鉄筋・寄せ筋","継手","定着"], dv:m=>m.m+(m.c?" / 芯 "+m.c:"")},
@@ -102,7 +102,7 @@ const SPEC = {
     design:m=>[["版厚",m.t],["上端筋",m.top],["下端筋",m.bot],["天端",m.lv||"伏図の凡例による"]]}
 };
 SPEC.girder = Object.assign({}, SPEC.beam, {label:"大梁",
-  design:m=>[["B×D",m.bd],["上端筋",m.top],["下端筋",m.bot],["STP",m.stp],["腹筋",m.web],["孔際補強",{fig:"梁貫通", text:"梁貫通補強要領による"}]]});
+  design:m=>[["B×D",m.bd],["上端筋",m.top],["下端筋",m.bot],["STP",m.stp],["腹筋",m.web],["貫通補強",{fig:"梁貫通", text:"梁貫通補強要領による"}]]});
 const TYPES = ["slab","beam","girder","sbeam","floor","col","wall"];
 const typesHere = () => TYPES.filter(t=>insp().members.some(m=>m.t===t));
 function master(mem){
