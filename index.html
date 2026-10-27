@@ -86,6 +86,17 @@ nav.tabs button[aria-current="true"] svg{stroke-width:2}
 .figlink.figmissing{color:var(--ink);font-weight:600;text-decoration:none}
 .dwg-q{width:100%;box-sizing:border-box;border:0;border-radius:10px;padding:10px 12px;background:var(--fill);font-size:16px}
 .chips button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.listbar{display:grid;gap:8px}
+.chips.lf{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin:0 -16px;padding:0 16px}
+.chips.lf::-webkit-scrollbar{display:none}
+.chips.lf button{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;background:var(--surface);box-shadow:var(--shadow);color:var(--ink)}
+.chips.lf button .num{color:var(--muted);font-size:13px}
+.chips.lf button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.chips.lf button[aria-pressed="true"] .num{color:inherit;opacity:.8}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--c)}
+.seg2{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;background:var(--fill);border-radius:10px;padding:2px;gap:2px}
+.seg2 button{border:0;background:transparent;border-radius:8px;padding:8px 6px;font-size:14px;font-weight:500;color:var(--ink)}
+.seg2 button[aria-pressed="true"]{background:var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.12);font-weight:600}
 .dwg-list{display:grid;gap:6px}
 .dwg-item{display:grid;grid-template-columns:5.2em 1fr;gap:8px;align-items:center;text-align:left;background:var(--surface);border:0;box-shadow:var(--shadow);border-radius:12px;padding:11px 14px;font-size:15px;transition:transform .12s ease}
 .dwg-item .no{font-family:var(--f-num);font-weight:600;font-size:17px;color:var(--accent)}
@@ -180,6 +191,8 @@ textarea{width:100%;box-sizing:border-box;min-height:84px;border:0;border-radius
 .thumbs figure{margin:0;position:relative}
 .thumbs img{width:84px;height:84px;object-fit:cover;border-radius:12px;border:0;display:block}
 .thumbs button{position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;border:0;background:var(--ink);color:var(--surface);font-size:14px;line-height:1}
+.thumbs button.ed{top:auto;bottom:-6px;background:var(--accent);color:#fff;font-size:13px}
+.thumbs img[data-act]{cursor:pointer}
 .filebtn{position:relative;overflow:hidden}
 .filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}

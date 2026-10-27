@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.27-8";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.27-9";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -255,16 +255,30 @@ function render(){
   initSectPanel();
   window.scrollTo(0, UI.keepScroll||0); UI.keepScroll=0;
 }
-function viewList(){
-  const ms=insp().members;
+/* 部材一覧：状態（未着手・途中・指摘あり・完了）でしぼり込み、符号・位置で探せる */
+const LIST_FILTERS=[["all","すべて",""],["none","未着手","var(--line)"],["part","途中","var(--part)"],["ng","指摘あり","var(--ng)"],["done","完了","var(--ok)"]];
+const normQ=x=>String(x||"").normalize("NFKC").toUpperCase().replace(/\s+/g,"");
+function listBody(){
+  const ms=insp().members, f=UI.lf||"all", q=normQ(UI.lq);
+  const hit=i=>{ const m=ms[i]; return (f==="all"||memberStat(i).s===f) && (!q || normQ(m.sym+" "+m.loc).includes(q)); };
   const sec=t=>{
-    const idx=ms.map((m,i)=>m.t===t?i:-1).filter(i=>i>=0);
-    const done=idx.filter(i=>["done","ng"].includes(memberStat(i).s)).length;
-    return `<section class="sec"><h2><span>${SPEC[t].label}</span><span class="num">${done} / ${idx.length}</span></h2><div class="grid">${
+    const all=ms.map((m,i)=>m.t===t?i:-1).filter(i=>i>=0), idx=all.filter(hit); if(!idx.length) return "";
+    const done=all.filter(i=>["done","ng"].includes(memberStat(i).s)).length;
+    return `<section class="sec"><h2><span>${SPEC[t].label}</span><span class="num">${done} / ${all.length}</span></h2><div class="grid">${
       idx.map(i=>{const m=ms[i],st=memberStat(i);return `<button class="mbtn${UI.flash===i?" flash":""}" id="tile-${i}" data-act="open" data-i="${i}" data-s="${st.s}"><span class="st"></span><span class="sym">${esc(m.sym)}</span><span class="loc">${esc(m.loc)}</span></button>`}).join("")}</div></section>`;
   };
-  return noticesHTML()+`<div class="legend"><span style="--c:var(--line)">未着手</span><span style="--c:var(--part)">途中</span><span style="--c:var(--ok)">完了</span><span style="--c:var(--ng)">指摘あり</span></div>`+typesHere().map(sec).join("");
+  const body=typesHere().map(sec).join("");
+  return body || `<div class="empty">当てはまる部材がありません。</div>`;
 }
+function viewList(){
+  const ms=insp().members, f=UI.lf||"all", cnt={all:ms.length,none:0,part:0,ng:0,done:0};
+  ms.forEach((m,i)=>cnt[memberStat(i).s]++);
+  const chips=LIST_FILTERS.map(([k,l,c])=>`<button data-act="lf" data-f="${k}" aria-pressed="${f===k}">${c?`<i class="dot" style="--c:${c}"></i>`:""}${l}<span class="num">${cnt[k]}</span></button>`).join("");
+  return noticesHTML()+`<div class="listbar"><div class="chips lf">${chips}</div>
+    <input class="dwg-q" id="list-q" type="search" placeholder="符号・位置で探す（例：C2、X3-Y2）" value="${esc(UI.lq||"")}" aria-label="部材を探す"></div>
+    <div id="listbody">${listBody()}</div>`;
+}
+document.addEventListener("input", e=>{ if(e.target.id!=="list-q") return; UI.lq=e.target.value; const b=$("#listbody"); if(b) b.innerHTML=listBody(); });
 function viewCard(mi){
   const d=D(), ms=insp().members, m=ms[mi], ma=master(m), sp=SPEC[m.t], st=memberStat(mi);
   const design=sp.design(ma).map(([k,v])=>{
@@ -388,11 +402,22 @@ function findCard(f){
    <div class="acts"><button class="btn" data-act="editfind" data-id="${esc(f.id)}">編集</button>${f.status==="done"?`<button class="btn" data-act="undone" data-id="${esc(f.id)}">未是正に戻す</button>`:`<button class="btn primary" data-act="done" data-id="${esc(f.id)}">是正確認した</button>`}${f.pin?`<button class="btn" data-act="showpin" data-id="${esc(f.id)}">図面で見る</button>`:""}</div>
   </article>`;
 }
+/* 指摘タブ：この検査の指摘と、すべての検査の未是正の指摘（是正確認で現場を回るとき用）を切り替える */
 function viewFinds(){
-  const d=D();
-  if(!d.finds.length) return `<div class="empty">指摘はまだありません。<br>部材カードで「×」を押すと、ここに番号付きで追加されます。</div>`;
+  const d=D(), others=INSPECTIONS.map(i=>({i, f:((S.data[i.id]||{}).finds||[]).filter(f=>f.status!=="done")})).filter(x=>x.f.length);
+  const nAll=others.reduce((n,x)=>n+x.f.length,0);
+  const scope=`<div class="seg2" role="group" aria-label="表示する指摘"><button data-act="fscope" data-v="one" aria-pressed="${!UI.fall}">この検査</button><button data-act="fscope" data-v="all" aria-pressed="${!!UI.fall}">全検査の未是正 <span class="num">${nAll}</span></button></div>`;
+  if(UI.fall){
+    if(!nAll) return scope+`<div class="empty">未是正の指摘はありません。</div>`;
+    return scope+others.map(({i,f})=>`<section class="sec"><h2><span>${esc(i.title)}</span><span class="num">${f.length}</span></h2><div style="display:grid;gap:10px">${
+      f.map(x=>{ const m=i.members[x.mi];
+        return `<article class="find"><div class="find-h"><span class="no">${x.no}</span><span class="where">${m?esc(m.sym+"　"+m.loc):"全般"}</span><span class="note">${esc(x.item?x.item.replace("/"," ・ "):"")}</span><span class="stat">未是正</span></div>
+          <p>${esc(x.text)}</p>${x.photos.length?`<div class="thumbs">${x.photos.map(p=>`<figure><img data-photo="${esc(p)}" alt="指摘${x.no}の写真"></figure>`).join("")}</div>`:""}</article>`; }).join("")
+      }</div><button class="btn" data-act="openinsp" data-id="${esc(i.id)}" style="margin-top:10px;width:100%">${i.id===S.cur?"この検査の指摘を開く":"この検査に切り替えて是正確認する"}</button></section>`).join("");
+  }
+  if(!d.finds.length) return scope+`<div class="empty">指摘はまだありません。<br>部材カードで「×」を押すと、ここに番号付きで追加されます。</div>`;
   const open=d.finds.filter(f=>f.status!=="done"), done=d.finds.filter(f=>f.status==="done");
-  return (open.length?`<section class="sec"><h2><span>未是正</span><span class="num">${open.length}</span></h2><div style="display:grid;gap:10px">${open.map(findCard).join("")}</div></section>`:"")+
+  return scope+(open.length?`<section class="sec"><h2><span>未是正</span><span class="num">${open.length}</span></h2><div style="display:grid;gap:10px">${open.map(findCard).join("")}</div></section>`:"")+
          (done.length?`<section class="sec"><h2><span>是正確認済み</span><span class="num">${done.length}</span></h2><div style="display:grid;gap:10px">${done.map(findCard).join("")}</div></section>`:"");
 }
 function viewSheet(){
@@ -457,9 +482,20 @@ function openFindSheet(draft){
   $("#fs-cam").onchange=onFiles; $("#fs-pick").onchange=onFiles;
   $("#fs-text").oninput=e=>{UI.draft.text=e.target.value};
 }
+/* 指摘の写真に書き込む（矢印・丸・文字など）。完了すると書き込み入りの写真に差し替える（元の写真は保存済みの指摘のために残す） */
+async function inkPhoto(id){
+  const url=await photo(id); if(!url) return;
+  const im=await loadImg(url), c=document.createElement("canvas"); c.width=im.naturalWidth||im.width; c.height=im.naturalHeight||im.height; c.getContext("2d").drawImage(im,0,0);
+  const back=()=>openFindSheet(UI.draft);
+  openInk([c], "", {title:"写真に書き込み", doneLabel:"完了", hint:"指かペンで書き込めます。2本指で拡大・移動。「完了」で書き込み入りの写真に差し替えます。",
+    unit:p=>Math.max(p.width,p.height)/1000, onCancel:back,
+    onDone:out=>{ const nid="p"+Date.now()+Math.random().toString(36).slice(2,6), v=out[0].toDataURL("image/jpeg",0.85);
+      photoCache.set(nid,v); dbPut("photos",nid,v); const k=UI.draft.photos.indexOf(id); if(k>=0) UI.draft.photos[k]=nid; else UI.draft.photos.push(nid);
+      back(); toast("写真に書き込みました"); }});
+}
 async function drawSheetThumbs(){
   const box=$("#fs-thumbs"); if(!box) return;
-  const arr=[]; for(const id of UI.draft.photos){ arr.push(`<figure><img src="${esc(safeImg(await photo(id)))}" alt="写真"><button data-act="rmphoto" data-id="${esc(id)}" aria-label="写真を外す">×</button></figure>`); }
+  const arr=[]; for(const id of UI.draft.photos){ arr.push(`<figure><img src="${esc(safeImg(await photo(id)))}" alt="写真" data-act="inkphoto" data-id="${esc(id)}"><button data-act="rmphoto" data-id="${esc(id)}" aria-label="写真を外す">×</button><button class="ed" data-act="inkphoto" data-id="${esc(id)}" aria-label="写真に書き込む">✎</button></figure>`); }
   box.innerHTML=arr.join("");
 }
 function shrink(file){
@@ -680,7 +716,10 @@ document.addEventListener("click", async e=>{
   const a=el.dataset.act, d=D(), ms=insp().members;
   if(a==="sheetbg"){ if(e.target===el){ cancelDraft(); } return; }
   if(a==="open"){ UI.card=+el.dataset.i; UI.flash=null; render(); return; }
-  if(a==="jump"){ const mi=+el.dataset.i; UI.tab="list"; UI.card=null; UI.flash=mi; UI.focus=mi; render();
+  if(a==="lf"){ UI.lf=el.dataset.f; render(); return; }
+  if(a==="fscope"){ UI.fall=el.dataset.v==="all"; render(); return; }
+  if(a==="openinsp"){ S.cur=el.dataset.id; UI.card=null; UI.pick=null; UI.flash=null; UI.focus=null; UI.fall=false; UI.tab="finds"; save(); render(); window.scrollTo(0,0); return; }
+  if(a==="jump"){ const mi=+el.dataset.i; UI.tab="list"; UI.lf="all"; UI.lq=""; UI.card=null; UI.flash=mi; UI.focus=mi; render();
     const t=document.getElementById("tile-"+mi); if(t){ t.scrollIntoView({block:"center"}); t.focus({preventScroll:true}); }
     toast(ms[mi].sym+"　"+ms[mi].loc); return; }
   if(a==="where"){ const mi=+el.dataset.i; UI.focus=mi; UI.tab="plan"; UI.zoom=Math.max(UI.zoom,1.75); render();
@@ -720,6 +759,7 @@ document.addEventListener("click", async e=>{
   if(a==="refs"){ $("#overlay").innerHTML=`<div class="scrim" data-act="sheetbg"><div class="sheet"><h3>基準値メモ</h3><div class="refs">${(insp().refs||REFS).map(r=>`<section><h4>${esc(r.h)}</h4><ul>${r.li.map(x=>`<li class="num" style="font-size:17px">${esc(x)}</li>`).join("")}</ul></section>`).join("")}</div><button class="btn primary" data-act="fclose">閉じる</button></div></div>`; return; }
   if(a==="fclose"){ closeSheet(); return; }
   if(a==="q"){ const t=$("#fs-text"); const add=el.dataset.q; t.value = t.value ? t.value.replace(/\s*$/,"")+(/[。、]$/.test(t.value.trim())?"":"。")+add : add; UI.draft.text=t.value; return; }
+  if(a==="inkphoto"){ inkPhoto(el.dataset.id); return; }
   if(a==="rmphoto"){ UI.draft.photos=UI.draft.photos.filter(p=>p!==el.dataset.id); drawSheetThumbs(); return; }
   if(a==="fsave"){ commitDraft(); closeSheet(); render(); toast("指摘を保存しました"); return; }
   if(a==="fcancel"){ cancelDraft(); return; }
@@ -1109,12 +1149,13 @@ function sanitizeInk(v){
   }
   return out;
 }
-async function openInk(pages, name){
-  let saved={}; try{ saved=sanitizeInk(await dbGet("kv",inkDbKey())); }catch(e){}
+/* opt.onDone があるとき（写真への書き込み）は端末に残さず、完了で書き込み済みの canvas を渡す */
+async function openInk(pages, name, opt={}){
+  let saved={}; if(!opt.onDone) try{ saved=sanitizeInk(await dbGet("kv",inkDbKey())); }catch(e){}
   const strokes=pages.map(c=>{ const sv=c.inkKey&&saved[c.inkKey]; if(!sv) return [];
     const f=sv.w? c.width/sv.w : 1;   /* ページの大きさが変わっていたら合わせる */
     return f===1? sv.strokes : sv.strokes.map(s=>Object.assign({},s,{p:s.p.map(x=>x*f)})); });
-  INK={pages, name, key:inkDbKey(), saved, cur:0, strokes, ops:pages.map(()=>[]), redo:pages.map(()=>[]), tool:"pen", penSeen:false, z:1, zmin:1};
+  INK={pages, name, opt, key:opt.onDone? null : inkDbKey(), saved, cur:0, strokes, ops:pages.map(()=>[]), redo:pages.map(()=>[]), tool:"pen", penSeen:false, z:1, zmin:1};
   inkShow(0);
   if(inkCount()) toast("前回の書き込みを読み込みました");
 }
@@ -1122,7 +1163,7 @@ function inkCount(){ return INK.strokes.reduce((n,a)=>n+a.length,0); }
 /* 端末に保存（書くたびに少し待ってからまとめて保存） */
 let inkSaveTimer=null;
 function inkPersist(now){
-  clearTimeout(inkSaveTimer); if(!INK) return;
+  clearTimeout(inkSaveTimer); if(!INK || !INK.key) return;
   const run=()=>{ const pages=Object.assign({},INK.saved);
     INK.pages.forEach((c,k)=>{ if(!c.inkKey) return; if(INK.strokes[k].length) pages[c.inkKey]={w:c.width, strokes:INK.strokes[k]}; else delete pages[c.inkKey]; });
     INK.saved=pages;
@@ -1130,9 +1171,9 @@ function inkPersist(now){
   if(now) run(); else inkSaveTimer=setTimeout(run,600);
 }
 function inkBar(){
-  const n=INK.pages.length;
-  return `<b>手書き　${INK.cur+1} / ${n}ページ</b><button data-ink="nav" data-d="-1" aria-label="前のページ">‹</button><button data-ink="nav" data-d="1" aria-label="次のページ">›</button>`+
-    `<button data-ink="undo">戻す</button><button data-ink="redo">進む</button><button data-ink="all">全体</button><button data-ink="cancel">閉じる</button><button data-ink="save" class="go">PDF保存</button>`;
+  const n=INK.pages.length, o=INK.opt;
+  return `<b>${esc(o.title||"手書き　"+(INK.cur+1)+" / "+n+"ページ")}</b>`+(n>1?`<button data-ink="nav" data-d="-1" aria-label="前のページ">‹</button><button data-ink="nav" data-d="1" aria-label="次のページ">›</button>`:"")+
+    `<button data-ink="undo">戻す</button><button data-ink="redo">進む</button><button data-ink="all">全体</button><button data-ink="cancel">${o.onDone?"やめる":"閉じる"}</button><button data-ink="save" class="go">${esc(o.doneLabel||"PDF保存")}</button>`;
 }
 /* 道具（ペン・マーカー・消しゴム）と、その道具の色・太さなど（次に書き出すときも同じ設定で始まる） */
 function inkOpts(){
@@ -1153,7 +1194,7 @@ function inkShow(k){
     <div class="sv-bar" id="inkbar">${inkBar()}</div>
     <div class="ink-opts" id="inkopts">${inkOpts()}</div>
     <div class="sv-box" id="inkbox"><div class="sv-wrap" id="inkwrap"><canvas class="ink-layer ink-mk" id="inkhl"></canvas><canvas class="ink-layer" id="inkcv"></canvas><canvas class="ink-layer" id="inklive"></canvas></div></div>
-    <div class="sv-hint">指かペンで書き込めます。2本指で拡大・移動。書き込みはこの端末に残り、PDF にだけ入ります（検査記録には入りません）。</div></div>`;
+    <div class="sv-hint">${esc(INK.opt.hint||"指かペンで書き込めます。2本指で拡大・移動。書き込みはこの端末に残り、PDF にだけ入ります（検査記録には入りません）。")}</div></div>`;
   const box=$("#inkbox"), wrap=$("#inkwrap"), hl=$("#inkhl"), cv=$("#inkcv"), live=$("#inklive");
   c.classList.add("ink-page"); wrap.insertBefore(c, hl);
   for(const x of [hl,cv,live]){ x.width=c.width; x.height=c.height; }
@@ -1258,7 +1299,7 @@ function inkGestures(box, cv){
     if(st) return;
     const [x,y]=pos(e), t=INK.tool;
     if(t==="erase"||t==="cut"){ st={id:e.pointerId,type:e.pointerType,cut:t==="cut",op:{add:[],rm:[]}}; eraseAt(x,y); return; }
-    const mk=t==="marker", P=INK_PREF, w=INK.pages[INK.cur].width/2480;
+    const mk=t==="marker", P=INK_PREF, pc=INK.pages[INK.cur], w=INK.opt.unit? INK.opt.unit(pc) : pc.width/2480;
     const s={t:mk?"mk":"pen", c:inkPick(mk?INK_MCOLORS:INK_COLORS, mk?P.mcolor:P.color)[2], a:mk?1:inkPick(INK_ALPHAS,P.alpha)[2], p:[],
       base:w*inkPick(mk?INK_MSIZES:INK_SIZES, mk?P.msize:P.size)[2]};
     /* 書いている線は一番上の canvas に不透明で描き、透明度・マーカーの掛け合わせは canvas ごと付ける */
@@ -1317,7 +1358,10 @@ document.addEventListener("click", async e=>{
     if(a==="undo") inkSwap(op.add,op.rm); else inkSwap(op.rm,op.add);
     to.push(op); inkRedraw(); inkPersist(); return; }
   if(a==="all"){ inkApply(0); INK.box.scrollLeft=0; INK.box.scrollTop=0; return; }
-  if(a==="cancel"){ const had=inkCount(); inkClose(); if(had) toast("書き込みはこの端末に残しました"); return; }
+  if(a==="cancel"){ const had=inkCount(), o=INK.opt;
+    if(o.onDone){ if(had && !confirm("書き込みを捨てて戻りますか？")) return; inkClose(); if(o.onCancel) o.onCancel(); return; }
+    inkClose(); if(had) toast("書き込みはこの端末に残しました"); return; }
+  if(a==="save" && INK.opt.onDone){ const o=INK.opt, out=INK.pages.map((c,i)=>inkCompose(c, INK.strokes[i])); inkClose(); o.onDone(out); return; }
   if(a==="save"){
     if(!window.jspdf){ toast("PDF作成の部品を読み込み中です。電波のある場所で少し待ってから押してください"); return; }
     el.disabled=true; el.textContent="作成中…";
