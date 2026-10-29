@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.29-1";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.29-2";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -335,6 +335,10 @@ function planZoomTo(z, px, py){
 }
 function attachPlanGestures(){
   const box=document.querySelector(".planbox"), wrap=$("#planwrap"); if(!box||!wrap) return;
+  /* ほかのタブから戻ったときも、図面の位置（倍率は UI.zoom）をそのままにする。検査を切り替えたときは最初から */
+  const pos=UI.planPos, img=$("#planimg");
+  if(pos && pos.cur===S.cur){ const put=()=>{ box.scrollLeft=pos.x; box.scrollTop=pos.y; }; put(); if(img && !img.complete) img.addEventListener("load",put,{once:true}); }
+  box.addEventListener("scroll",()=>{ UI.planPos={cur:S.cur, x:box.scrollLeft, y:box.scrollTop}; },{passive:true});
   liveGestures(box, wrap, {
     getZ:()=>UI.zoom, clamp:z=>Math.max(1,Math.min(6,z)),
     commit:(z,cx,cy,mx,my)=>{ UI.zoom=z; wrap.style.width=z*100+"%"; box.scrollLeft=cx*z-mx; box.scrollTop=cy*z-my; }
@@ -734,7 +738,7 @@ document.addEventListener("click", async e=>{
   if(a==="jump"){ const mi=+el.dataset.i; UI.tab="list"; UI.lf="all"; UI.lq=""; UI.card=null; UI.flash=mi; UI.focus=mi; render();
     const t=document.getElementById("tile-"+mi); if(t){ t.scrollIntoView({block:"center"}); t.focus({preventScroll:true}); }
     toast(ms[mi].sym+"　"+ms[mi].loc); return; }
-  if(a==="where"){ const mi=+el.dataset.i; UI.focus=mi; UI.tab="plan"; UI.zoom=Math.max(UI.zoom,1.75); render();
+  if(a==="where"){ const mi=+el.dataset.i; UI.focus=mi; UI.tab="plan"; UI.planPos=null; UI.zoom=Math.max(UI.zoom,1.75); render();
     const h=document.querySelector(`.hs[data-i="${mi}"]`); h&&h.scrollIntoView({block:"center",inline:"center"}); return; }
   if(a==="close"){ UI.card=null; render(); return; }
   if(a==="prev"||a==="next"){ UI.card+= a==="next"?1:-1; render(); return; }
@@ -785,7 +789,7 @@ document.addEventListener("click", async e=>{
   if(a==="zoom"){ planZoomTo(UI.zoom*Math.pow(1.5,+el.dataset.z)); return; }
   if(a==="zoomfit"){ planZoomTo(1); return; }
   if(a==="editfind"){ if(UI.pick) return; const f=d.finds.find(x=>x.id===el.dataset.id); openFindSheet(Object.assign({},f,{photos:[...f.photos],isNew:false})); return; }
-  if(a==="showpin"){ UI.tab="plan"; UI.zoom=Math.max(UI.zoom,1.75); render(); const p=document.querySelector(`.pin[data-id="${el.dataset.id}"]`); p&&p.scrollIntoView({block:"center",inline:"center"}); return; }
+  if(a==="showpin"){ UI.tab="plan"; UI.planPos=null; UI.zoom=Math.max(UI.zoom,1.75); render(); const p=document.querySelector(`.pin[data-id="${el.dataset.id}"]`); p&&p.scrollIntoView({block:"center",inline:"center"}); return; }
   if(a==="done"){ $("#overlay").innerHTML=`<div class="scrim" data-act="sheetbg"><div class="sheet"><h3>是正確認</h3>
     <div class="field"><label for="dn-date">確認日</label><input type="date" id="dn-date" value="${today()}"></div>
     <div class="field"><label for="dn-m">確認方法</label><select id="dn-m"><option>再検査</option><option selected>是正写真確認</option><option>その場で是正確認</option><option>その他</option></select></div>
@@ -824,7 +828,9 @@ document.getElementById("tabs").addEventListener("click", e=>{
   const b=e.target.closest("button[data-tab]"); if(!b) return;
   if(UI.pick) abandonPick();
   if(b.dataset.tab==="list" && UI.tab==="list") UI.card=null;
+  if(UI.tab==="plan") UI.planY=window.scrollY;   /* 図面タブの画面の縦位置も覚えておく */
   UI.tab=b.dataset.tab;
+  if(UI.tab==="plan" && UI.planPos && UI.planPos.cur===S.cur) UI.keepScroll=UI.planY||0;
   if(UI.tab==="dwg" && !DWG){ ensureDrawings().then(render); return; }
   render();
 });
