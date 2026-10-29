@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.29-2";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.29-3";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -678,7 +678,7 @@ function sectView(box, r, pg, onChange, opts={}){
 function sectPanel(m, mi){
   const pg=LIST_PAGES[sectFor(m)[0]];
   return `<div class="sectpanel"><div class="sp-box" data-i="${mi}"></div><span class="sp-cap">${esc(pg.title.split(" ")[1]||pg.title)}</span>
-    <div class="sp-ctl"><button data-act="spzoom" data-z="-1" aria-label="縮小">－</button><button data-act="spzoom" data-z="1" aria-label="拡大">＋</button><button data-act="spfit" aria-label="部材の表示に戻す">↺</button><button data-act="sect" data-i="${mi}" aria-label="全画面で表示">⤢</button></div></div>`;
+    <div class="sp-ctl"><button data-act="spfit" aria-label="部材の表示に戻す">↺</button><button data-act="sect" data-i="${mi}" aria-label="全画面で表示">⤢</button></div></div>`;
 }
 let SV=null, SPV=null;
 /* 部材カード内の表示欄。✓を押して画面を描き直しても、同じ部材なら倍率と位置を保つ */

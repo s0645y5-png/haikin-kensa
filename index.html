@@ -75,7 +75,7 @@ nav.tabs button[aria-current="true"] svg{stroke-width:2}
 
 /* member card */
 .card-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
-.card-head .sym{font-family:var(--f-num);font-weight:700;font-size:44px;line-height:1;letter-spacing:-.02em}
+.card-head .sym{font-family:var(--f-num);font-weight:700;font-size:32px;line-height:1;letter-spacing:-.02em}
 .card-head .loc{font-size:15px;color:var(--muted)}
 .kind{font-size:13px;letter-spacing:.01em;color:var(--accent);font-weight:600}
 .design{background:var(--surface);box-shadow:var(--shadow);border-radius:var(--r);padding:12px 16px;display:grid;grid-template-columns:auto 1fr;gap:3px 14px;align-items:baseline;min-width:0;margin:0}
@@ -105,8 +105,8 @@ nav.tabs button[aria-current="true"] svg{stroke-width:2}
 .welcome p{margin:0;line-height:1.7}
 .welcome .filebtn{padding:16px;font-size:17px;text-align:center}
 /* 断面リスト：部材カード内の窓（部材情報の上、横幅いっぱい）。窓の中だけを拡大縮小できる */
-.sectpanel{position:relative;height:220px;border:0;box-shadow:var(--shadow);border-radius:var(--r);overflow:hidden;background:#fff}
-@media (min-width:560px){.sectpanel{height:300px}}
+.sectpanel{position:relative;height:clamp(260px,46vh,380px);border:0;box-shadow:var(--shadow);border-radius:var(--r);overflow:hidden;background:#fff}
+@media (min-width:560px){.sectpanel{height:clamp(300px,46vh,420px)}}
 /* 部材カードの中身（iPhone は上から順に、iPad は左右2列） */
 .cardbody{display:grid;gap:14px}
 .cardbody .groups{display:grid;gap:14px;align-content:start}
@@ -293,7 +293,7 @@ table.fl th{background:var(--sunk);font-weight:700;white-space:nowrap}
   main{padding:10px 16px calc(66px + env(safe-area-inset-bottom,0px));max-width:1180px;width:100%;box-sizing:border-box;margin:0 auto}
   .card-foot{left:calc(var(--side) + env(safe-area-inset-left,0px));right:env(safe-area-inset-right,0px);bottom:0;max-width:none;padding:6px 16px calc(6px + env(safe-area-inset-bottom,0px))}
   .card-foot .btn{padding:9px 12px}
-  .card-head .sym{font-size:34px}
+  .card-head .sym{font-size:28px}
   /* 部材カード：左に断面リストと部材情報、右に確認項目（iPhone SE など幅の狭い機種でも） */
   .cardbody{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"p g" "d g" "b g";grid-template-rows:auto auto 1fr;align-items:start;column-gap:16px}
   .cardbody .sectpanel{grid-area:p;height:min(300px,62vh)}
