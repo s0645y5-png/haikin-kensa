@@ -278,6 +278,48 @@ table.fl th{background:var(--sunk);font-weight:700;white-space:nowrap}
   .sheet::before{display:none}
   .planbox{max-height:74vh}
 }
+/* ===== スマホの横向き（高さが低い画面）：タブを左の縦の列に移し、上の帯を1行にまとめて、縦の広さを部材の確認に使う ===== */
+@media (orientation:landscape) and (max-height:520px){
+  :root{--side:72px}
+  #app{max-width:none;padding-left:calc(var(--side) + env(safe-area-inset-left,0px));padding-right:env(safe-area-inset-right,0px)}
+  header.top{grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:5px 16px;padding:6px 16px 6px}
+  header.top .top-row{grid-column:1;grid-row:1}
+  header.top .top-meta{grid-column:2;grid-row:1;flex-wrap:nowrap;white-space:nowrap;gap:14px}
+  header.top .bar{grid-column:1/-1;grid-row:2;height:3px}
+  .top-row select{font-size:15px;padding:6px 32px 6px 11px}
+  nav.tabs{top:0;bottom:0;left:0;right:auto;width:var(--side);max-width:none;margin:0;box-sizing:content-box;grid-template-columns:1fr;grid-auto-rows:min-content;align-content:center;gap:6px;
+    padding:env(safe-area-inset-top,0px) 2px env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);border-top:0;border-right:.5px solid var(--line)}
+  nav.tabs button{padding:6px 0 5px}
+  main{padding:10px 16px calc(66px + env(safe-area-inset-bottom,0px));max-width:1180px;width:100%;box-sizing:border-box;margin:0 auto}
+  .card-foot{left:calc(var(--side) + env(safe-area-inset-left,0px));right:env(safe-area-inset-right,0px);bottom:0;max-width:none;padding:6px 16px calc(6px + env(safe-area-inset-bottom,0px))}
+  .card-foot .btn{padding:9px 12px}
+  .card-head .sym{font-size:34px}
+  /* 部材カード：左に断面リストと部材情報、右に確認項目（iPhone SE など幅の狭い機種でも） */
+  .cardbody{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"p g" "d g" "b g";grid-template-rows:auto auto 1fr;align-items:start;column-gap:16px}
+  .cardbody .sectpanel{grid-area:p;height:min(300px,62vh)}
+  .cardbody .design{grid-area:d}
+  .cardbody .groups{grid-area:g}
+  .cardbody .cardbtns{grid-area:b}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(112px,1fr))}
+  .planbox{max-height:calc(100vh - 150px)}
+  .toast{bottom:calc(64px + env(safe-area-inset-bottom,0px))}
+  .toast.act{bottom:calc(64px + env(safe-area-inset-bottom,0px))}
+  /* 下から出る画面は中央に（高さを広く使う） */
+  .scrim{align-items:center;padding-left:var(--side)}
+  .sheet{max-width:640px;border-radius:22px;max-height:94%;padding-top:14px}
+  .sheet::before{display:none}
+  /* 全画面表示・手書き：題名とボタンを1行に */
+  .sv-bar{flex-wrap:nowrap;padding:calc(6px + env(safe-area-inset-top,0px)) calc(12px + env(safe-area-inset-right,0px)) 6px calc(12px + env(safe-area-inset-left,0px))}
+  .sv-bar b{flex:0 1 auto;max-width:34%}
+  .sv-bar button{height:34px;flex:1 1 0}
+  .sv-tabs,.ink-opts{padding-left:calc(12px + env(safe-area-inset-left,0px));padding-right:calc(12px + env(safe-area-inset-right,0px))}
+  .ink-opts{grid-template-columns:auto minmax(0,1fr);align-items:center;column-gap:14px;padding-bottom:6px}
+  .ink-row{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .ink-row::-webkit-scrollbar{display:none}
+  .ink-row button{height:30px}
+  main{gap:10px}
+  .sv-hint{padding-top:4px;padding-bottom:calc(4px + env(safe-area-inset-bottom,0px))}
+}
 </style>
 
 </head><body>
