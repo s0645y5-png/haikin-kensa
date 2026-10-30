@@ -76,7 +76,12 @@ nav.tabs button[aria-current="true"] svg{stroke-width:2}
 /* member card */
 .card-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
 .card-head .sym{font-family:var(--f-num);font-weight:700;font-size:32px;line-height:1;letter-spacing:-.02em}
-.card-head .loc{font-size:15px;color:var(--muted)}
+.card-head .loc{font-size:15px;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 見出しを詰めて、断面リストの窓を上に広げる：符号の横に位置、件数の横に基準値メモ */
+.card-head .ch-l{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;align-items:baseline;min-width:0}
+.card-head .ch-l .kind{grid-column:1/-1}
+.card-head .ch-r{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.back{margin-bottom:-8px}
 .kind{font-size:13px;letter-spacing:.01em;color:var(--accent);font-weight:600}
 .design{background:var(--surface);box-shadow:var(--shadow);border-radius:var(--r);padding:12px 16px;display:grid;grid-template-columns:auto 1fr;gap:3px 14px;align-items:baseline;min-width:0;margin:0}
 #app.nodata header.top,#app.nodata nav.tabs{display:none}

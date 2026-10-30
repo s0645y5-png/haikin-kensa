@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.30-1";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.30-2";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -300,8 +300,8 @@ function viewCard(mi){
           [["ok","✓"],["ng","×"],["na","－"]].map(([kk,s])=>`<button data-act="set" data-k="${kk}" data-key="${esc(k)}" aria-pressed="${v===kk}" aria-label="${esc(it)} ${kk==="ok"?"適合":kk==="ng"?"不適合":"対象外"}">${s}</button>`).join("")}</span></div>`}).join("")}</div>`;
   }).join("");
   return `<button class="back" data-act="close">‹ 部材一覧</button>
-  <div class="card-head"><div><div class="kind">${sp.label}　${mi+1-ms.findIndex(x=>x.t===m.t)} / ${ms.filter(x=>x.t===m.t).length}</div><div class="sym">${esc(m.sym)}</div><div class="loc">${esc(m.loc)}</div></div>
-  <div style="text-align:right;display:grid;gap:6px;justify-items:end"><span class="num" style="font-size:20px">${st.n}<span style="color:var(--muted)"> / ${st.total}</span></span><button class="refbtn" data-act="refs">基準値メモ</button></div></div>
+  <div class="card-head"><div class="ch-l"><div class="kind">${sp.label}　${ms.slice(0,mi+1).filter(x=>x.t===m.t).length} / ${ms.filter(x=>x.t===m.t).length}</div><div class="sym">${esc(m.sym)}</div><div class="loc">${esc(m.loc)}</div></div>
+  <div class="ch-r"><span class="num" style="font-size:20px">${st.n}<span style="color:var(--muted)"> / ${st.total}</span></span><button class="refbtn" data-act="refs">基準値メモ</button></div></div>
   <div class="cardbody">
   ${sectFor(m)?sectPanel(m,mi):""}
   <dl class="design">${design}</dl>
