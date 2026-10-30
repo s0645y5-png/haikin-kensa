@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.30-2";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.30-3";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -334,7 +334,7 @@ function viewPlan(){
   <div class="planbox"><div class="planwrap ${UI.pick?"picking":""}${ed?" selecting":""}" id="planwrap" style="width:${UI.zoom*100}%"><img src="${esc(safeImg(i.plan))}" alt="${esc(i.title)} キープラン" id="planimg" style="width:100%">${hs}${pins}</div></div>
   <div class="legend">${ed? `<span style="--c:#007aff">検査対象</span><span class="ring" style="--c:#8e8e93">対象外</span>`
     : `<span class="ring" style="--c:#007aff">未着手</span><span style="--c:#007aff">途中</span><span style="--c:#34c759">完了</span><span style="--c:#ff3b30">指摘あり</span>${D().sel?`<span class="ring" style="--c:#8e8e93">対象外</span>`:""}`}</div>
-  <p class="note">${ed?"白い部材をタップすると青（検査対象）になり、もう一度タップすると白に戻ります。選び終わったら「決定」を押してください。記録や指摘がある部材は外せません。"
+  <p class="note">${ed?"輪だけの部材をタップすると青（検査対象）になり、もう一度タップすると輪だけに戻ります。選び終わったら「決定」を押してください。記録や指摘がある部材は外せません。"
     :"2本指で図面だけを拡大・縮小できます。枠で囲んだ部材（柱・梁・耐圧盤）をタップすると、部材一覧のその部材へ移動します。白抜きの輪は未着手、塗りは途中・完了・指摘ありです。番号のピンは指摘です。"}</p>`;
 }
 /* 図面の拡大縮小：図面の枠の中だけを拡大する（画面全体は拡大しない）。
