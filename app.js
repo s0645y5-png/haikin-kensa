@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.30-1";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.30-2";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -326,15 +326,16 @@ function viewPlan(){
   const ed=UI.selEdit&&UI.selEdit.cur===S.cur? UI.selEdit : null;   /* 検査対象を選んでいる途中 */
   const hs=i.members.map((m,mi)=>{const b=hotspot(i.id,m); if(!b) return "";
     const on=ed? !!ed.sel[m.uid] : isTarget(mi);
-    return `<button class="hs ${esc(m.t)}${on?"":" off"}${UI.focus===mi&&!ed?" focus":""}" data-act="${ed?"seltog":"jump"}" data-i="${mi}" data-s="${ed?"none":memberStat(mi).s}" style="left:${b.l}%;top:${b.t}%;width:${b.w}%;height:${b.h}%" aria-label="${esc(m.sym+" "+m.loc)}${ed?(on?"（検査対象）":"（対象外）"):""}"${ed?` aria-pressed="${on}"`:""}></button>`}).join("");
+    return `<button class="hs ${esc(m.t)}${m.box?" boxy":""}${on?"":" off"}${UI.focus===mi&&!ed?" focus":""}" data-act="${ed?"seltog":"jump"}" data-i="${mi}" data-s="${ed?"none":memberStat(mi).s}" style="left:${b.l}%;top:${b.t}%;width:${b.w}%;height:${b.h}%" aria-label="${esc(m.sym+" "+m.loc)}${ed?(on?"（検査対象）":"（対象外）"):""}"${ed?` aria-pressed="${on}"`:""}></button>`}).join("");
   const nSel=ed? i.members.filter(m=>ed.sel[m.uid]).length : 0;
   const selbar= ed? `<div class="selmsg"><span>検査対象をタップで選ぶ（<b class="num">${nSel}</b> / ${i.members.length}部材）</span><span class="selbtns"><button data-act="selall">全部</button><button data-act="selnone">外す</button><button data-act="selcancel">やめる</button><button data-act="seldone" class="primary">決定</button></span></div>`
     : `<button class="btn selbtn" data-act="seledit">検査対象を選ぶ</button>`;
   return `${pick}${UI.pick?"":selbar}<div class="planbar"><span class="note">${esc(i.place)}</span><span class="zoom"><button data-act="zoom" data-z="-1" aria-label="縮小">－</button><button data-act="zoom" data-z="1" aria-label="拡大">＋</button><button data-act="zoomfit" style="width:auto;padding:0 10px">全体</button></span></div>
   <div class="planbox"><div class="planwrap ${UI.pick?"picking":""}${ed?" selecting":""}" id="planwrap" style="width:${UI.zoom*100}%"><img src="${esc(safeImg(i.plan))}" alt="${esc(i.title)} キープラン" id="planimg" style="width:100%">${hs}${pins}</div></div>
-  <div class="legend"><span style="--c:#007aff">検査対象</span><span style="--c:#b8bec6">対象外</span>${ed?"":`<span style="--c:var(--ok)">完了</span><span style="--c:var(--ng)">指摘あり</span>`}</div>
-  <p class="note">${ed?"灰色の部材をタップすると青（検査対象）になり、もう一度タップすると灰色に戻ります。選び終わったら「決定」を押してください。記録や指摘がある部材は外せません。"
-    :"2本指で図面だけを拡大・縮小できます。枠で囲んだ部材（柱・梁・耐圧盤）をタップすると、部材一覧のその部材へ移動します。灰色は検査対象外です。番号のピンは指摘です。"}</p>`;
+  <div class="legend">${ed? `<span style="--c:#007aff">検査対象</span><span class="ring" style="--c:#8e8e93">対象外</span>`
+    : `<span class="ring" style="--c:#007aff">未着手</span><span style="--c:#007aff">途中</span><span style="--c:#34c759">完了</span><span style="--c:#ff3b30">指摘あり</span>${D().sel?`<span class="ring" style="--c:#8e8e93">対象外</span>`:""}`}</div>
+  <p class="note">${ed?"白い部材をタップすると青（検査対象）になり、もう一度タップすると白に戻ります。選び終わったら「決定」を押してください。記録や指摘がある部材は外せません。"
+    :"2本指で図面だけを拡大・縮小できます。枠で囲んだ部材（柱・梁・耐圧盤）をタップすると、部材一覧のその部材へ移動します。白抜きの輪は未着手、塗りは途中・完了・指摘ありです。番号のピンは指摘です。"}</p>`;
 }
 /* 図面の拡大縮小：図面の枠の中だけを拡大する（画面全体は拡大しない）。
    (px, py) は枠の中の基準点。指定がなければ枠の中央を基準にする */
@@ -753,7 +754,9 @@ document.addEventListener("click", async e=>{
     UI.selEdit={cur:S.cur, sel}; render(); return; }
   if(a==="seltog"&&UI.selEdit){ const mi=+el.dataset.i, u=ms[mi].uid, sel=UI.selEdit.sel;
     if(sel[u]){ if(hasRecord(mi)){ toast(ms[mi].sym+"　記録・指摘があるので外せません"); return; } delete sel[u]; } else sel[u]=1;
-    render(); return; }
+    const on=!!sel[u]; el.classList.toggle("off",!on); el.setAttribute("aria-pressed",String(on)); el.setAttribute("aria-label",ms[mi].sym+" "+ms[mi].loc+(on?"（検査対象）":"（対象外）"));
+    el.classList.remove("pop"); void el.offsetWidth; if(on) el.classList.add("pop");
+    const n=document.querySelector(".selmsg .num"); if(n) n.textContent=ms.filter(m=>sel[m.uid]).length; return; }
   if(a==="selall"&&UI.selEdit){ ms.forEach(m=>UI.selEdit.sel[m.uid]=1); render(); return; }
   if(a==="selnone"&&UI.selEdit){ const sel={}; ms.forEach((m,mi)=>{ if(hasRecord(mi)) sel[m.uid]=1; }); UI.selEdit.sel=sel; render(); return; }
   if(a==="selcancel"){ UI.selEdit=null; render(); return; }
