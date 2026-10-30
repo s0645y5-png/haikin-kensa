@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.29-4";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.30-1";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -661,7 +661,8 @@ function sectView(box, r, pg, onChange, opts={}){
     v.apply(readable ? Math.max(zf*0.8,0.55) : zf);   /* 部材カードの窓は少し引いて、隣の部材や罫線も見えるように */
     const W=rw*v.z, H=rh*v.z;
     box.scrollLeft = W<=box.clientWidth  ? (r[1]+rw/2)*v.z-box.clientWidth/2  : r[1]*v.z-6;
-    box.scrollTop  = H<=box.clientHeight ? (r[2]+rh/2)*v.z-box.clientHeight/2 : r[2]*v.z-6;
+    /* 縦は、部材カードの窓では余った高さの7割を枠の上に回す（枠の上の符号の欄などが見えるように）。全画面は中央 */
+    box.scrollTop  = H<=box.clientHeight ? r[2]*v.z-(box.clientHeight-H)*(readable?0.7:0.5) : r[2]*v.z-6;
     v.base=v.z; save(); };
   v.all=()=>{ v.apply(0); box.scrollLeft=0; box.scrollTop=0; v.base=v.z; save(); };   /* ページ全体（apply が最小倍率に丸める） */
   v.restore=(z,sl,st)=>{ v.apply(z); box.scrollLeft=sl; box.scrollTop=st; };
