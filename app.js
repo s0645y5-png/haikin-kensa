@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.29-4";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.10.30-1";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -159,6 +159,7 @@ function toStore(){
     for(const [k,v] of Object.entries(d.res)){ const p=k.indexOf("|"), m=ms[+k.slice(0,p)]; if(m) res[m.uid+"#"+k.slice(p+1)]=v; }
     const finds=d.finds.map(f=>{ const o=Object.assign({},f); if(f.mi!=null&&ms[f.mi]) o.mu=ms[f.mi].uid; delete o.mi; return o; });
     out.data[id]={head:d.head, seq:d.seq, res, finds, firstAt:d.firstAt||{}};
+    if(d.sel) out.data[id].sel=Object.keys(d.sel);   /* 検査対象（部材の固有ID）。なければ全部材が対象 */
   }
   return out;
 }
@@ -180,6 +181,7 @@ function fromStoreData(data){
     const h=d.head||{}, head={date:safeDate(h.date)||today(), method:safeStr(h.method,20), kanri:safeStr(h.kanri,60), genba:safeStr(h.genba,60), zesei:safeStr(h.zesei,60)};
     const firstAt={}; for(const [u,t] of Object.entries(d.firstAt||{})) firstAt[safeStr(u,200)]=safeNum(t);
     out[id]={head, seq:Math.max(0,Math.floor(safeNum(d.seq))), res, finds, orphanRes, firstAt};
+    if(Array.isArray(d.sel)){ const sel={}; d.sel.slice(0,5000).forEach(u=>{ const v=safeStr(u,300); if(v) sel[v]=1; }); out[id].sel=sel; }
   }
   return out;
 }
@@ -220,10 +222,13 @@ function memberStat(mi){
   if(d.finds.some(f=>f.mi===mi && f.status!=="done")) ng=true;
   return {n,total:keys.length,s: ng?"ng": n===0?"none": n===keys.length?"done":"part"};
 }
+/* 検査対象：図面タブの「検査対象を選ぶ」で決める（D().sel＝部材の固有ID）。まだ選んでいなければ全部材が対象 */
+function isTarget(mi){ const d=D(), m=insp().members[mi]; return !d.sel || !!(m && d.sel[m.uid]); }
+function hasRecord(mi){ const d=D(), m=insp().members[mi]; return itemKeys(m.t).some(k=>d.res[mi+"|"+k]) || d.finds.some(f=>f.mi===mi); }
 function totals(){
-  const ms=insp().members; let done=0,part=0,ng=0;
-  ms.forEach((_,i)=>{const s=memberStat(i).s; if(s==="done")done++; else if(s==="part")part++; else if(s==="ng")ng++;});
-  return {all:ms.length,done,part,ng};
+  const ms=insp().members; let all=0,done=0,part=0,ng=0;
+  ms.forEach((_,i)=>{ if(!isTarget(i)) return; all++; const s=memberStat(i).s; if(s==="done")done++; else if(s==="part")part++; else if(s==="ng")ng++;});
+  return {all,done,part,ng};
 }
 
 /* ===== 描画 ===== */
@@ -231,7 +236,7 @@ function renderTop(){
   const sel=$("#insp-select");
   sel.innerHTML=INSPECTIONS.map(i=>`<option value="${esc(i.id)}" ${i.id===S.cur?"selected":""}>${esc(i.title)}　（${i.members.length}部材）</option>`).join("");
   const t=totals(), d=D();
-  const w=x=>(x/t.all*100).toFixed(1)+"%";
+  const w=x=>(t.all?x/t.all*100:0).toFixed(1)+"%";
   $("#topbar").innerHTML=`<i style="width:${w(t.done)};background:var(--ok)"></i><i style="width:${w(t.ng)};background:var(--ng)"></i><i style="width:${w(t.part)};background:var(--part)"></i>`;
   const open=d.finds.filter(f=>f.status!=="done").length;
   $("#topmeta").innerHTML=`<span>完了 <b class="num">${t.done+t.ng}</b> / ${t.all}　指摘 <b class="num">${d.finds.length}</b>件（未是正 ${open}）</span><span>検査日 ${esc(md(d.head.date))}</span>`;
@@ -268,23 +273,25 @@ function listBody(){
   const ms=insp().members, f=UI.lf||"all", q=normQ(UI.lq);
   const hit=i=>{ const m=ms[i]; return (f==="all"||memberStat(i).s===f) && (!q || normQ(m.sym+" "+m.loc).includes(q)); };
   const sec=t=>{
-    const all=ms.map((m,i)=>m.t===t?i:-1).filter(i=>i>=0), idx=all.filter(hit); if(!idx.length) return "";
+    const all=ms.map((m,i)=>m.t===t&&isTarget(i)?i:-1).filter(i=>i>=0), idx=all.filter(hit); if(!idx.length) return "";
     const done=all.filter(i=>["done","ng"].includes(memberStat(i).s)).length;
     return `<section class="sec"><h2><span>${SPEC[t].label}</span><span class="num">${done} / ${all.length}</span></h2><div class="grid">${
       idx.map(i=>{const m=ms[i],st=memberStat(i);return `<button class="mbtn${UI.flash===i?" flash":""}" id="tile-${i}" data-act="open" data-i="${i}" data-s="${st.s}"><span class="st"></span><span class="sym">${esc(m.sym)}</span><span class="loc">${esc(m.loc)}</span></button>`}).join("")}</div></section>`;
   };
   const body=typesHere().map(sec).join("");
+  if(!ms.some((_,i)=>isTarget(i))) return `<div class="empty">検査対象がまだありません。<br>図面タブの「検査対象を選ぶ」で、検査する部材をタップして選んでください。</div>`;
   return body || `<div class="empty">当てはまる部材がありません。</div>`;
 }
 function viewList(){
-  const ms=insp().members, f=UI.lf||"all", cnt={all:ms.length,none:0,part:0,ng:0,done:0};
-  ms.forEach((m,i)=>cnt[memberStat(i).s]++);
+  const ms=insp().members, f=UI.lf||"all", cnt={all:0,none:0,part:0,ng:0,done:0};
+  ms.forEach((m,i)=>{ if(!isTarget(i)) return; cnt.all++; cnt[memberStat(i).s]++; });
   const chips=LIST_FILTERS.map(([k,l,c])=>`<button data-act="lf" data-f="${k}" aria-pressed="${f===k}">${c?`<i class="dot" style="--c:${c}"></i>`:""}${l}<span class="num">${cnt[k]}</span></button>`).join("");
   return noticesHTML()+`<div class="listbar"><div class="chips lf">${chips}</div>
     <input class="dwg-q" id="list-q" type="search" placeholder="符号・位置で探す（例：C2、X3-Y2）" value="${esc(UI.lq||"")}" aria-label="部材を探す"></div>
     <div id="listbody">${listBody()}</div>`;
 }
 document.addEventListener("input", e=>{ if(e.target.id!=="list-q") return; UI.lq=e.target.value; const b=$("#listbody"); if(b) b.innerHTML=listBody(); });
+function stepTarget(mi,dir){ const n=insp().members.length; for(let j=mi+dir;j>=0&&j<n;j+=dir) if(isTarget(j)) return j; return null; }
 function viewCard(mi){
   const d=D(), ms=insp().members, m=ms[mi], ma=master(m), sp=SPEC[m.t], st=memberStat(mi);
   const design=sp.design(ma).map(([k,v])=>{
@@ -309,19 +316,25 @@ function viewCard(mi){
   <div class="cardbtns"><button class="btn" data-act="addfind">＋ この部材に指摘を追加</button>${hotspot(S.cur,m)?`<button class="btn" data-act="where" data-i="${mi}">図面で場所を見る</button>`:""}</div>
   </div>
   <div style="height:56px"></div>
-  <div class="card-foot"><button class="btn" data-act="prev" ${mi===0?"disabled":""}>‹ 前</button><button class="btn primary" data-act="allok">残りを全て ✓</button><button class="btn" data-act="next" ${mi===ms.length-1?"disabled":""}>次 ›</button></div>`;
+  <div class="card-foot"><button class="btn" data-act="prev" ${stepTarget(mi,-1)==null?"disabled":""}>‹ 前</button><button class="btn primary" data-act="allok">残りを全て ✓</button><button class="btn" data-act="next" ${stepTarget(mi,1)==null?"disabled":""}>次 ›</button></div>`;
 }
 function viewPlan(){
   const d=D(), i=insp();
   const pins=d.finds.filter(f=>f.pin).map(f=>`<button class="pin ${f.status==="done"?"done":""}" style="left:${safeNum(f.pin.x)}%;top:${safeNum(f.pin.y)}%" data-act="editfind" data-id="${esc(f.id)}" aria-label="指摘${esc(f.no)}">${esc(f.no)}</button>`).join("");
   const pick=UI.pick?`<div class="pickmsg"><span>指摘 ${UI.draft?.no??""} の位置を図面上でタップ</span><button data-act="pickcancel">やめる</button></div>`:"";
   if(!i.plan) return pick+`<div class="empty">この検査にはキープランの図がありません。</div>`;
+  const ed=UI.selEdit&&UI.selEdit.cur===S.cur? UI.selEdit : null;   /* 検査対象を選んでいる途中 */
   const hs=i.members.map((m,mi)=>{const b=hotspot(i.id,m); if(!b) return "";
-    return `<button class="hs ${esc(m.t)}${UI.focus===mi?" focus":""}" data-act="jump" data-i="${mi}" data-s="${memberStat(mi).s}" style="left:${b.l}%;top:${b.t}%;width:${b.w}%;height:${b.h}%" aria-label="${esc(m.sym+" "+m.loc)}"></button>`}).join("");
-  return `${pick}<div class="planbar"><span class="note">${esc(i.place)}</span><span class="zoom"><button data-act="zoom" data-z="-1" aria-label="縮小">－</button><button data-act="zoom" data-z="1" aria-label="拡大">＋</button><button data-act="zoomfit" style="width:auto;padding:0 10px">全体</button></span></div>
-  <div class="planbox"><div class="planwrap ${UI.pick?"picking":""}" id="planwrap" style="width:${UI.zoom*100}%"><img src="${esc(safeImg(i.plan))}" alt="${esc(i.title)} キープラン" id="planimg" style="width:100%">${hs}${pins}</div></div>
-  <div class="legend"><span style="--c:var(--part)">検査対象</span><span style="--c:var(--ok)">完了</span><span style="--c:var(--ng)">指摘あり</span></div>
-  <p class="note">2本指で図面だけを拡大・縮小できます。枠で囲んだ部材（柱・梁・耐圧盤）をタップすると、部材一覧のその部材へ移動します。番号のピンは指摘です。</p>`;
+    const on=ed? !!ed.sel[m.uid] : isTarget(mi);
+    return `<button class="hs ${esc(m.t)}${on?"":" off"}${UI.focus===mi&&!ed?" focus":""}" data-act="${ed?"seltog":"jump"}" data-i="${mi}" data-s="${ed?"none":memberStat(mi).s}" style="left:${b.l}%;top:${b.t}%;width:${b.w}%;height:${b.h}%" aria-label="${esc(m.sym+" "+m.loc)}${ed?(on?"（検査対象）":"（対象外）"):""}"${ed?` aria-pressed="${on}"`:""}></button>`}).join("");
+  const nSel=ed? i.members.filter(m=>ed.sel[m.uid]).length : 0;
+  const selbar= ed? `<div class="selmsg"><span>検査対象をタップで選ぶ（<b class="num">${nSel}</b> / ${i.members.length}部材）</span><span class="selbtns"><button data-act="selall">全部</button><button data-act="selnone">外す</button><button data-act="selcancel">やめる</button><button data-act="seldone" class="primary">決定</button></span></div>`
+    : `<button class="btn selbtn" data-act="seledit">検査対象を選ぶ</button>`;
+  return `${pick}${UI.pick?"":selbar}<div class="planbar"><span class="note">${esc(i.place)}</span><span class="zoom"><button data-act="zoom" data-z="-1" aria-label="縮小">－</button><button data-act="zoom" data-z="1" aria-label="拡大">＋</button><button data-act="zoomfit" style="width:auto;padding:0 10px">全体</button></span></div>
+  <div class="planbox"><div class="planwrap ${UI.pick?"picking":""}${ed?" selecting":""}" id="planwrap" style="width:${UI.zoom*100}%"><img src="${esc(safeImg(i.plan))}" alt="${esc(i.title)} キープラン" id="planimg" style="width:100%">${hs}${pins}</div></div>
+  <div class="legend"><span style="--c:#007aff">検査対象</span><span style="--c:#b8bec6">対象外</span>${ed?"":`<span style="--c:var(--ok)">完了</span><span style="--c:var(--ng)">指摘あり</span>`}</div>
+  <p class="note">${ed?"灰色の部材をタップすると青（検査対象）になり、もう一度タップすると灰色に戻ります。選び終わったら「決定」を押してください。記録や指摘がある部材は外せません。"
+    :"2本指で図面だけを拡大・縮小できます。枠で囲んだ部材（柱・梁・耐圧盤）をタップすると、部材一覧のその部材へ移動します。灰色は検査対象外です。番号のピンは指摘です。"}</p>`;
 }
 /* 図面の拡大縮小：図面の枠の中だけを拡大する（画面全体は拡大しない）。
    (px, py) は枠の中の基準点。指定がなければ枠の中央を基準にする */
@@ -735,13 +748,26 @@ document.addEventListener("click", async e=>{
   if(a==="lf"){ UI.lf=el.dataset.f; render(); return; }
   if(a==="fscope"){ UI.fall=el.dataset.v==="all"; render(); return; }
   if(a==="openinsp"){ S.cur=el.dataset.id; UI.card=null; UI.pick=null; UI.flash=null; UI.focus=null; UI.fall=false; UI.tab="finds"; save(); render(); window.scrollTo(0,0); return; }
-  if(a==="jump"){ const mi=+el.dataset.i; UI.tab="list"; UI.lf="all"; UI.lq=""; UI.card=null; UI.flash=mi; UI.focus=mi; render();
+  if(a==="seledit"){ const sel={};   /* まだ選んでいなければ、記録のある部材だけを青にして始める */
+    ms.forEach((m,mi)=>{ if(d.sel? d.sel[m.uid] : hasRecord(mi)) sel[m.uid]=1; });
+    UI.selEdit={cur:S.cur, sel}; render(); return; }
+  if(a==="seltog"&&UI.selEdit){ const mi=+el.dataset.i, u=ms[mi].uid, sel=UI.selEdit.sel;
+    if(sel[u]){ if(hasRecord(mi)){ toast(ms[mi].sym+"　記録・指摘があるので外せません"); return; } delete sel[u]; } else sel[u]=1;
+    render(); return; }
+  if(a==="selall"&&UI.selEdit){ ms.forEach(m=>UI.selEdit.sel[m.uid]=1); render(); return; }
+  if(a==="selnone"&&UI.selEdit){ const sel={}; ms.forEach((m,mi)=>{ if(hasRecord(mi)) sel[m.uid]=1; }); UI.selEdit.sel=sel; render(); return; }
+  if(a==="selcancel"){ UI.selEdit=null; render(); return; }
+  if(a==="seldone"&&UI.selEdit){ const sel=UI.selEdit.sel, n=ms.filter(m=>sel[m.uid]).length; UI.selEdit=null;
+    if(n===ms.length) delete d.sel; else d.sel=sel; save(); render();
+    toast("検査対象を "+n+" 部材にしました"); return; }
+  if(a==="jump"){ const mi=+el.dataset.i;
+    if(!isTarget(mi)){ toast(ms[mi].sym+"　"+ms[mi].loc+"は検査対象外です（「検査対象を選ぶ」で追加できます）"); return; } UI.tab="list"; UI.lf="all"; UI.lq=""; UI.card=null; UI.flash=mi; UI.focus=mi; render();
     const t=document.getElementById("tile-"+mi); if(t){ t.scrollIntoView({block:"center"}); t.focus({preventScroll:true}); }
     toast(ms[mi].sym+"　"+ms[mi].loc); return; }
   if(a==="where"){ const mi=+el.dataset.i; UI.focus=mi; UI.tab="plan"; UI.planPos=null; UI.zoom=Math.max(UI.zoom,1.75); render();
     const h=document.querySelector(`.hs[data-i="${mi}"]`); h&&h.scrollIntoView({block:"center",inline:"center"}); return; }
   if(a==="close"){ UI.card=null; render(); return; }
-  if(a==="prev"||a==="next"){ UI.card+= a==="next"?1:-1; render(); return; }
+  if(a==="prev"||a==="next"){ const j=stepTarget(UI.card, a==="next"?1:-1); if(j!=null){ UI.card=j; render(); } return; }
   if(a==="set"){
     const k=el.dataset.key, v=el.dataset.k, key=UI.card+"|"+k;
     if(v==="ng"){ const ex=d.finds.find(f=>f.mi===UI.card&&f.item===k); if(ex){ openFindSheet(Object.assign({},ex,{photos:[...ex.photos]})); } else { openFindSheet(newDraft(UI.card,k)); } d.res[key]="ng"; }
@@ -838,14 +864,14 @@ document.getElementById("tabs").addEventListener("click", e=>{
 function abandonPick(){ const dr=UI.draft, d=D(); UI.pick=null;
   if(dr && dr.isNew && dr.item){ if(dr.prev) d.res[dr.mi+"|"+dr.item]=dr.prev; else delete d.res[dr.mi+"|"+dr.item]; save(); }
   UI.draft=null; }
-document.getElementById("insp-select").addEventListener("change", e=>{ if(UI.pick) abandonPick(); S.cur=e.target.value; UI.card=null; UI.pick=null; UI.flash=null; UI.focus=null; save(); render(); });
+document.getElementById("insp-select").addEventListener("change", e=>{ if(UI.pick) abandonPick(); S.cur=e.target.value; UI.card=null; UI.pick=null; UI.flash=null; UI.focus=null; UI.selEdit=null; save(); render(); });
 document.addEventListener("change", e=>{ const k=e.target.dataset?.h; if(k){ D().head[k]=e.target.value; save(); renderTop(); } });
 function toCSV(){
   const d=D(), ms=insp().members, mark={ok:"✓",ng:"×",na:"－"}, out=[];
   const q=s=>`"${String(s??"").replace(/"/g,'""')}"`;
   out.push(["検査箇所",insp().place,"検査日",d.head.date,"検査方法",d.head.method,"監理担当者",d.head.kanri,"現場担当者",d.head.genba].map(q).join(","));
   typesHere().forEach(t=>{
-    const idx=ms.map((m,i)=>m.t===t?i:-1).filter(i=>i>=0);
+    const idx=ms.map((m,i)=>m.t===t&&isTarget(i)?i:-1).filter(i=>i>=0); if(!idx.length) return;
     out.push(""); out.push([SPEC[t].label+" 符号",...idx.map(i=>ms[i].sym)].map(q).join(","));
     out.push(["位置",...idx.map(i=>ms[i].loc)].map(q).join(","));
     itemKeys(t).forEach(k=>out.push([k,...idx.map(i=>mark[d.res[i+"|"+k]]||"")].map(q).join(",")));
@@ -972,7 +998,7 @@ function fmtDate(s){ return s? s.replace(/-/g,"/") : ""; }
 
 /* 記録のある部材（帳票に載せる部材）。記録が1つもなければ全部材 */
 function recordedIdx(t){
-  const d=D(), ms=insp().members, all=ms.map((m,i)=>m.t===t?i:-1).filter(i=>i>=0);
+  const d=D(), ms=insp().members, all=ms.map((m,i)=>m.t===t&&isTarget(i)?i:-1).filter(i=>i>=0);
   const rec=all.filter(i=>itemKeys(t).some(k=>d.res[i+"|"+k]) || d.finds.some(f=>f.mi===i));
   const anyRec=ms.some((m,i)=>itemKeys(m.t).some(k=>d.res[i+"|"+k]));
   return anyRec? rec : all;
@@ -1420,7 +1446,7 @@ async function exportXlsx(btn){
     let row=3+info.length+1;
     const anyRec=ms.some((m,mi)=>itemKeys(m.t).some(k=>d.res[mi+"|"+k]));
     for(const t of typesHere()){
-      let idx=ms.map((m,mi)=>m.t===t?mi:-1).filter(mi=>mi>=0);
+      let idx=ms.map((m,mi)=>m.t===t&&isTarget(mi)?mi:-1).filter(mi=>mi>=0);
       if(anyRec) idx=idx.filter(mi=>itemKeys(t).some(k=>d.res[mi+"|"+k]) || d.finds.some(f=>f.mi===mi));
       if(!idx.length) continue;
       const title=ws.getRow(row); title.getCell(1).value=SPEC[t].label+"（"+idx.length+"部材）"; title.getCell(1).font={name:"游ゴシック",size:11,bold:true}; row++;

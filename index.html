@@ -211,6 +211,14 @@ textarea{width:100%;box-sizing:border-box;min-height:84px;border:0;border-radius
 .hs[data-s="done"]{border-color:#248a3d;background:rgba(52,199,89,.30)}
 .hs[data-s="ng"]{border-color:#e0261b;background:rgba(255,59,48,.30)}
 .hs:active{background:rgba(0,122,255,.5)}
+.hs.off{border-color:#b8bec6;background:rgba(150,158,168,.10)}
+.selecting .hs:not(.off){border-color:#007aff;background:rgba(0,122,255,.38)}
+.selecting .hs.off{border-style:dashed}
+.selbtn{display:block;width:100%;margin-bottom:8px}
+.selmsg{background:var(--accent);color:#fff;border-radius:var(--r);box-shadow:var(--shadow);padding:10px 12px;margin-bottom:8px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;font-weight:600}
+.selmsg .selbtns{display:flex;gap:6px;margin-left:auto}
+.selmsg button{background:rgba(255,255,255,.18);color:#fff;border:0;border-radius:8px;padding:7px 10px;font-weight:700}
+.selmsg button.primary{background:#fff;color:var(--accent)}
 .hs.focus{outline:3px solid #f2a100;outline-offset:3px;z-index:2}
 .picking .hs{pointer-events:none;opacity:.35}
 @media (prefers-reduced-motion:no-preference){.hs.focus{animation:blink 1s ease-in-out 3}@keyframes blink{50%{outline-color:transparent}}}
