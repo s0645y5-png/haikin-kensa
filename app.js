@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.11.02-1";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.11.02-2";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -251,6 +251,7 @@ function viewWelcome(){
     <p>はじめに、工事のデータファイル（<b>配筋検査データ_〇〇.json</b>）を読み込んでください。</p>
     <span class="btn primary filebtn">データファイルを選ぶ<input type="file" id="data-file" aria-label="データファイルを選ぶ"></span>
     <p class="note">端末に保存したファイルのほか、iPhone では「ファイル」アプリの画面から iCloud Drive や Box などのクラウドのフォルダも開いて選べます。読み込んだデータはこの端末の中に保存され、次回からは自動で開きます。アプリを開くときは電波が必要ですが、開いた後は電波が途切れても使い続けられます。</p>
+    <a class="btn" href="manual/" style="display:block;text-align:center;text-decoration:none;margin-top:14px">操作マニュアル</a>
   </section>`;
 }
 function render(){
@@ -479,6 +480,7 @@ function viewSheet(){
   <p class="note">${esc(PROJECT.name)}　作成日 ${esc(DATA.built||"")}　検査箇所 ${INSPECTIONS.length} 件</p>
   <span class="btn filebtn" style="text-align:center">新しいデータファイルを読み込む<input type="file" id="data-file" aria-label="新しいデータファイルを読み込む"></span>
   <p class="note">階が追加されたときなどに、新しいデータファイルに差し替えます。これまでの検査記録はそのまま残ります。</p>
+  <a class="btn" href="manual/" style="display:block;text-align:center;text-decoration:none;margin-top:14px">操作マニュアル</a>
   <p class="note" style="text-align:right">アプリの版 ${APP_VERSION}</p>`;
 }
 async function hydrateThumbs(){

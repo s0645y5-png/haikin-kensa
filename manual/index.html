@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f2f2f7">
+<title>配筋検査アプリ 操作マニュアル</title>
+<!-- 操作マニュアル（アプリの帳票タブ・最初の画面から開く）。画面写真は架空の物件（サンプル工事）で撮ったもの。工事の情報は入れない -->
+<style>
+:root{--bg:#f2f2f7;--surface:#fff;--ink:#1c1c1e;--muted:#6e6e73;--line:#e3e3e8;--blue:#007aff;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#000;--surface:#1c1c1e;--ink:#f5f5f7;--muted:#98989f;--line:#38383a;--blue:#0a84ff}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.7 -apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",sans-serif;-webkit-text-size-adjust:100%}
+.top{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:8px;padding:calc(env(safe-area-inset-top) + 8px) 16px 8px;background:color-mix(in srgb,var(--bg) 85%,transparent);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);border-bottom:.5px solid var(--line)}
+.top a{color:var(--blue);text-decoration:none;font-size:17px;padding:6px 4px}
+.top span{font-weight:600;font-size:15px;margin-left:auto;color:var(--muted)}
+main{max-width:640px;margin:0 auto;padding:12px 16px calc(env(safe-area-inset-bottom) + 40px)}
+h1{font-size:26px;line-height:1.3;margin:12px 0 8px}
+h2{font-size:20px;margin:36px 0 8px;padding-top:4px;scroll-margin-top:calc(env(safe-area-inset-top) + 60px)}
+p,li{margin:6px 0}
+ol,ul{padding-left:1.4em}
+.lead{color:var(--muted)}
+nav.toc{background:var(--surface);border-radius:14px;padding:6px 16px;margin:16px 0}
+nav.toc a{display:block;padding:9px 0;color:var(--blue);text-decoration:none;border-bottom:.5px solid var(--line)}
+nav.toc a:last-child{border-bottom:0}
+figure{margin:16px auto;max-width:320px;text-align:center}
+figure img{display:block;width:100%;height:auto;border-radius:18px;border:.5px solid var(--line);box-shadow:0 2px 12px rgba(0,0,0,.12)}
+figcaption{font-size:13px;color:var(--muted);margin-top:8px;line-height:1.5}
+table{width:100%;border-collapse:collapse;background:var(--surface);border-radius:12px;overflow:hidden;margin:12px 0;font-size:15px}
+th,td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:.5px solid var(--line)}
+tr:last-child td{border-bottom:0}
+th{font-size:13px;color:var(--muted);font-weight:600}
+td:first-child{white-space:nowrap;font-weight:600}
+.dot{display:inline-block;width:14px;height:14px;border-radius:50%;vertical-align:-2px;margin-right:6px}
+.box{background:var(--surface);border-radius:14px;padding:12px 16px;margin:12px 0}
+.foot{margin-top:40px;text-align:center}
+.foot a{display:inline-block;background:var(--blue);color:#fff;text-decoration:none;border-radius:14px;padding:13px 28px;font-weight:600}
+</style>
+</head>
+<body>
+<div class="top"><a href="../">‹ アプリに戻る</a><span>操作マニュアル</span></div>
+<main>
+<h1>配筋検査アプリ 操作マニュアル</h1>
+<p class="lead">監理者（構造）の配筋検査を、紙の検査表の代わりにスマートフォン・iPad で行うアプリです。インストールは不要で、ブラウザで開いて使います。</p>
+<p class="lead">画面の写真は説明用の架空の物件（サンプル工事）です。</p>
+
+<nav class="toc" aria-label="目次">
+<a href="#s1">1. はじめに（最初の1回だけ）</a>
+<a href="#s2">2. 画面の構成</a>
+<a href="#s3">3. 検査の流れ</a>
+<a href="#s4">4. 指摘の記録と是正確認</a>
+<a href="#s5">5. 帳票の書き出し</a>
+<a href="#s6">6. 記録の保存とバックアップ（大切）</a>
+<a href="#s7">7. 困ったとき</a>
+</nav>
+
+<h2 id="s1">1. はじめに（最初の1回だけ）</h2>
+<p>準備は4つです。2回目からは、ホーム画面のアイコンを押すだけで前回の続きから使えます。</p>
+<ol>
+<li><b>アプリを開く</b>：iPhone は Safari で https://s0645y5-png.github.io/haikin-kensa/ を開きます。</li>
+<li><b>ホーム画面に追加する</b>：Safari の共有ボタン →「ホーム画面に追加」。以後はアイコンから開きます。開いた後は電波が途切れても使えます。</li>
+<li><b>データファイルを読み込む</b>：担当者から Box などで受け取った「配筋検査データ_〇〇.json」を、最初の画面の「データファイルを選ぶ」で選びます。検査箇所・部材・設計値・図面が入ります。</li>
+<li><b>構造図ファイルを読み込む（必要な人だけ）</b>：「構造図」タブの「構造図ファイルを選ぶ」で「配筋検査_構造図_〇〇.json」を選ぶと、構造図一式を見られます。</li>
+</ol>
+<figure><img src="img/01_start.jpg" alt="最初の画面" loading="lazy"><figcaption>最初の画面：「データファイルを選ぶ」を押す</figcaption></figure>
+<p>データファイルが新しくなったときは、帳票タブの一番下「新しいデータファイルを読み込む」で入れ替えます。それまでの記録は消えません。</p>
+
+<h2 id="s2">2. 画面の構成</h2>
+<p>画面の一番上で検査（例：1階 柱・壁）を切り替え、下の5つのタブで画面を移ります。上の帯には完了数・指摘数・検査日が出ます。</p>
+<table>
+<tr><th>タブ</th><th>できること</th></tr>
+<tr><td>部材</td><td>部材の一覧。タップで部材カード（確認項目）を開く。状態でのしぼり込み、符号・位置での検索</td></tr>
+<tr><td>図面</td><td>キープラン。部材をタップするとその部材へ移動。検査対象を選ぶ</td></tr>
+<tr><td>指摘</td><td>指摘の一覧と是正確認。「全検査の未是正」でほかの検査の指摘もまとめて見る</td></tr>
+<tr><td>構造図</td><td>構造図一式の閲覧（左右スワイプでページ送り、2本指で拡大）</td></tr>
+<tr><td>帳票</td><td>検査日・担当者の入力、PDF・Excel の書き出し、バックアップ、このマニュアル</td></tr>
+</table>
+<figure><img src="img/02_list.jpg" alt="部材タブ" loading="lazy"><figcaption>部材タブ：緑の枠＝完了、赤＝指摘あり、青い点＝途中。上の案内はバックアップのお知らせ</figcaption></figure>
+<p>図面タブの部材の印は、次の意味です。</p>
+<table>
+<tr><th>印</th><th>意味</th></tr>
+<tr><td><span class="dot" style="box-shadow:inset 0 0 0 2px #007aff"></span>青い輪</td><td>未着手</td></tr>
+<tr><td><span class="dot" style="background:#007aff"></span>青で塗りつぶし</td><td>途中</td></tr>
+<tr><td><span class="dot" style="background:#34c759"></span>緑で塗りつぶし</td><td>完了</td></tr>
+<tr><td><span class="dot" style="background:#ff3b30"></span>赤で塗りつぶし</td><td>指摘あり</td></tr>
+<tr><td><span class="dot" style="box-shadow:inset 0 0 0 1.5px #8e8e93"></span>灰色の細い輪</td><td>検査対象外</td></tr>
+<tr><td>番号のピン</td><td>指摘の場所</td></tr>
+</table>
+<figure><img src="img/05_plan.jpg" alt="図面タブ" loading="lazy"><figcaption>図面タブ：2本指で図面だけを拡大できる</figcaption></figure>
+
+<h2 id="s3">3. 検査の流れ</h2>
+<p>検査は「検査を選ぶ → 帳票の欄を入れる → 検査対象を選ぶ → 部材ごとに確認する」の順です。</p>
+<ol>
+<li><b>検査を選ぶ</b>：画面上の欄で、今日検査する箇所を選びます。</li>
+<li><b>帳票の欄を入れる</b>：帳票タブで検査日・検査方法（全部材確認／符号毎確認／抜取り確認）・監理担当者・現場担当者を入れます。</li>
+<li><b>検査対象を選ぶ（抜取りのとき）</b>：図面タブの「検査対象を選ぶ」を押し、検査する部材をタップして青にして「決定」。部材一覧・件数・帳票が、選んだ部材だけになります。選ばなければ全部材が対象です。記録のある部材は外せません。</li>
+<li><b>部材カードで確認する</b>：部材タブ（または図面の部材をタップ）で部材カードを開き、確認項目ごとに押します。
+<ul>
+<li>✓ 適合、× 不適合、－ 対象外（もう一度押すと取り消し）</li>
+<li>「残りを全て ✓」：まだ押していない項目を全部 ✓ にする（すぐ出る「元に戻す」で取り消せる）</li>
+<li>「‹ 前」「次 ›」で隣の部材へ移る</li>
+</ul></li>
+</ol>
+<figure><img src="img/06_select.jpg" alt="検査対象を選ぶ画面" loading="lazy"><figcaption>検査対象を選んでいるところ：青＝検査対象、輪だけ＝対象外。選び終えたら「決定」</figcaption></figure>
+<p>部材カードの上には、その部材の断面リスト（設計図）がオレンジの枠で出ます。2本指で拡大、右下のボタンで全画面表示です。その下に設計値が並びます。</p>
+<figure><img src="img/03_card.jpg" alt="部材カードの上" loading="lazy"><figcaption>部材カードの上：断面リストの窓と設計値</figcaption></figure>
+<figure><img src="img/04_items.jpg" alt="部材カードの確認項目" loading="lazy"><figcaption>部材カードの下：確認項目ごとに ✓ × － を押す</figcaption></figure>
+<p>部材カード右上の「基準値メモ」でかぶり厚さなどの基準値を、梁の「梁貫通補強要領」で梁貫通補強検討書（適用範囲と計算結果一覧表）を見られます。</p>
+
+<h2 id="s4">4. 指摘の記録と是正確認</h2>
+<p>部材カードで × を押すと、指摘の入力画面が開きます（「＋ この部材に指摘を追加」からも開けます）。</p>
+<ol>
+<li>よく使う言葉のボタンか、文字入力で指摘内容・処理方法を書きます。</li>
+<li>「📷 撮影」または「写真を選ぶ」で写真を付けます（1件に20枚まで）。写真の ✎ で、矢印や丸を書き込めます。</li>
+<li>「図面に位置を記録」を押して図面をタップすると、図面に番号のピンが立ちます。</li>
+<li>「保存」を押します。</li>
+</ol>
+<figure><img src="img/07_find.jpg" alt="指摘の入力画面" loading="lazy"><figcaption>指摘の入力画面</figcaption></figure>
+<p><b>是正確認</b>：指摘タブで該当の指摘の「是正確認した」を押します。「全検査の未是正」に切り替えると、ほかの検査の未是正もまとめて確認できます。</p>
+<figure><img src="img/08_finds.jpg" alt="指摘タブ" loading="lazy"><figcaption>指摘タブ：「是正確認した」で完了</figcaption></figure>
+
+<h2 id="s5">5. 帳票の書き出し</h2>
+<p>帳票タブの下のボタンで、PDF か Excel の帳票を作ります。抜取り検査では、記録のある部材だけが帳票に載ります。</p>
+<ul>
+<li><b>PDF帳票を書き出す</b>：検査表・キープラン・指摘事項・指摘写真・✓入り断面リストを、1つのPDF（A3横）にまとめます。保存する前に、ページごとに指やペンで手書きを書き足せます。最後に「PDF保存」を押します。</li>
+<li><b>Excel帳票を書き出す</b>：検査帳票・指摘事項・写真・キープランの4つのシートを作ります。</li>
+</ul>
+<p>書き出したファイルは「共有」（メール・ファイルなど）か「この端末に保存」を選んで、<b>社内サーバーに保存</b>してください。</p>
+<figure><img src="img/09_sheet.jpg" alt="帳票タブの上" loading="lazy"><figcaption>帳票タブの上：検査日・検査方法・担当者を入れる</figcaption></figure>
+<figure><img src="img/10_export.jpg" alt="帳票タブの下" loading="lazy"><figcaption>帳票タブの下：PDF・Excel の書き出しとバックアップ</figcaption></figure>
+
+<h2 id="s6">6. 記録の保存とバックアップ（大切）</h2>
+<div class="box">
+<p>記録と写真は、<b>その端末のブラウザの中だけ</b>に保存され、クラウドには送られません。端末をなくすと戻せないので、バックアップを取ってください。</p>
+<ul>
+<li>検査が終わるごと、また機種変更の前に、帳票タブの「<b>バックアップを保存</b>」で .json ファイル（写真込み）を保存し、社内サーバーに置いてください。しばらく保存していないと、部材タブに案内が出ます。</li>
+<li>別の端末で続けるときは「バックアップを読み込む」で読み込みます。</li>
+<li>ブラウザのデータを消したり、ホーム画面のアイコンを削除したりすると、記録が消えることがあります。</li>
+<li>検査記録・写真を、個人のクラウドやメールに置いたままにしないでください。</li>
+</ul>
+</div>
+
+<h2 id="s7">7. 困ったとき</h2>
+<table>
+<tr><th>こんなとき</th><th>すること</th></tr>
+<tr><td>最初の画面から進めない</td><td>データファイルを読み込む（1 の 3）</td></tr>
+<tr><td>図面の部材をタップしても移動しない</td><td>その部材は検査対象外。「検査対象を選ぶ」で追加する</td></tr>
+<tr><td>部材が一覧に出てこない</td><td>状態のしぼり込みを「すべて」にし、検索欄を空にする。検査対象外の部材は出ない</td></tr>
+<tr><td>記録を間違えて付けた</td><td>同じボタンをもう一度押すと取り消せる</td></tr>
+<tr><td>アプリの新しい版が届いたか知りたい</td><td>電波のある場所で開き直し、帳票タブ一番下の版（例：2026.11.02-2）を確かめる</td></tr>
+<tr><td>端末を替える</td><td>古い端末で「バックアップを保存」→ 新しい端末で「バックアップを読み込む」</td></tr>
+<tr><td>設計値・図面がおかしい</td><td>アプリ担当者（監理者）に連絡する</td></tr>
+</table>
+<div class="foot"><a href="../">アプリに戻る</a></div>
+</main>
+</body>
+</html>
