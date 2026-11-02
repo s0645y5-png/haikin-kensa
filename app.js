@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.10.30-4";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.11.02-1";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -225,6 +225,8 @@ function memberStat(mi){
 /* 検査対象：図面タブの「検査対象を選ぶ」で決める（D().sel＝部材の固有ID）。まだ選んでいなければ全部材が対象 */
 function isTarget(mi){ const d=D(), m=insp().members[mi]; return !d.sel || !!(m && d.sel[m.uid]); }
 function hasRecord(mi){ const d=D(), m=insp().members[mi]; return itemKeys(m.t).some(k=>d.res[mi+"|"+k]) || d.finds.some(f=>f.mi===mi); }
+/* 検査の検査対象の数（検査を選ぶ欄に出す。まだ選んでいなければ全部材） */
+function nTargets(i){ const sel=(S.data[i.id]||{}).sel; return sel? i.members.filter(m=>sel[m.uid]).length : i.members.length; }
 function totals(){
   const ms=insp().members; let all=0,done=0,part=0,ng=0;
   ms.forEach((_,i)=>{ if(!isTarget(i)) return; all++; const s=memberStat(i).s; if(s==="done")done++; else if(s==="part")part++; else if(s==="ng")ng++;});
@@ -234,7 +236,7 @@ function totals(){
 /* ===== 描画 ===== */
 function renderTop(){
   const sel=$("#insp-select");
-  sel.innerHTML=INSPECTIONS.map(i=>`<option value="${esc(i.id)}" ${i.id===S.cur?"selected":""}>${esc(i.title)}　（${i.members.length}部材）</option>`).join("");
+  sel.innerHTML=INSPECTIONS.map(i=>`<option value="${esc(i.id)}" ${i.id===S.cur?"selected":""}>${esc(i.title)}　（${nTargets(i)}部材）</option>`).join("");
   const t=totals(), d=D();
   const w=x=>(t.all?x/t.all*100:0).toFixed(1)+"%";
   $("#topbar").innerHTML=`<i style="width:${w(t.done)};background:var(--ok)"></i><i style="width:${w(t.ng)};background:var(--ng)"></i><i style="width:${w(t.part)};background:var(--part)"></i>`;
@@ -307,7 +309,7 @@ function viewCard(mi){
           [["ok","✓"],["ng","×"],["na","－"]].map(([kk,s])=>`<button data-act="set" data-k="${kk}" data-key="${esc(k)}" aria-pressed="${v===kk}" aria-label="${esc(it)} ${kk==="ok"?"適合":kk==="ng"?"不適合":"対象外"}">${s}</button>`).join("")}</span></div>`}).join("")}</div>`;
   }).join("");
   return `<button class="back" data-act="close">‹ 部材一覧</button>
-  <div class="card-head"><div class="ch-l"><div class="kind">${sp.label}　${ms.slice(0,mi+1).filter(x=>x.t===m.t).length} / ${ms.filter(x=>x.t===m.t).length}</div><div class="sym">${esc(m.sym)}</div><div class="loc">${esc(m.loc)}</div></div>
+  <div class="card-head"><div class="ch-l"><div class="kind">${sp.label}　${ms.slice(0,mi+1).filter((x,j)=>x.t===m.t&&isTarget(j)).length} / ${ms.filter((x,j)=>x.t===m.t&&isTarget(j)).length}</div><div class="sym">${esc(m.sym)}</div><div class="loc">${esc(m.loc)}</div></div>
   <div class="ch-r"><span class="num" style="font-size:20px">${st.n}<span style="color:var(--muted)"> / ${st.total}</span></span><button class="refbtn" data-act="refs">基準値メモ</button></div></div>
   <div class="cardbody">
   ${sectFor(m)?sectPanel(m,mi):""}
