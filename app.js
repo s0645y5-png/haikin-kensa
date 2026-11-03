@@ -1041,7 +1041,8 @@ async function pdfReportPages(){
   const pl=await planWithPins();
   const rx=1510, rw=PDF_W-M-rx; let ry=y;
   if(pl){ const plImg=await loadImg(pl.url);
-    pdfText(g,"キープラン（✓：確認済み　×：指摘あり　ピン 赤：未是正　緑：是正確認済み）",rx,ry+14,{size:22,bold:true}); ry+=32;
+    pdfText(g,"キープラン",rx,ry+14,{size:22,bold:true});
+    pdfText(g,"✓：確認済み　×：指摘あり　ピン 赤：未是正　緑：是正確認済み",rx+130,ry+15,{size:17,color:"#444"}); ry+=32;
     const ph=Math.min(rw*pl.h/pl.w, 700); const pw=ph*pl.w/pl.h; g.drawImage(plImg,rx,ry,pw,ph); g.strokeStyle="#555"; g.strokeRect(rx,ry,pw,ph); ry+=ph+24; }
   pdfText(g,"指摘事項",rx,ry+14,{size:22,bold:true}); ry+=32;
   const fcols=[60,200,rw-60-200-80-130,80,130];
