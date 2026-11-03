@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.11.02-2";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.11.03-1";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -984,6 +984,18 @@ async function planWithPins(){
   const c=document.createElement("canvas"); c.width=im.naturalWidth; c.height=im.naturalHeight; const g=c.getContext("2d");
   g.fillStyle="#fff"; g.fillRect(0,0,c.width,c.height); g.drawImage(im,0,0);
   const r=Math.max(11, c.width/70);
+  /* 確認した部材の印（断面リストと同じ書き方）：完了＝青の✓、途中＝薄い✓、指摘あり＝赤の× */
+  i.members.forEach((m,mi)=>{
+    const st=memberStat(mi).s; if(st==="none") return;
+    const b=hotspot(i.id,m); if(!b) return;
+    const x=b.l/100*c.width, y=b.t/100*c.height, w=b.w/100*c.width, h=b.h/100*c.height, cx=x+w/2, cy=y+h/2;
+    const col= st==="ng"? PEN_NG : st==="done"? PEN_OK : "#8fa8d8";
+    g.save(); g.globalAlpha=.9; g.strokeStyle=col; g.lineWidth=Math.max(2,r*0.16);
+    if(m.t==="col" && !m.box){ g.beginPath(); g.ellipse(cx,cy,w/2,h/2,0,0,Math.PI*2); g.stroke(); } else g.strokeRect(x,y,w,h);
+    g.restore();
+    const s=Math.max(r*1.6, Math.min(Math.min(w,h)*1.1, r*2.6));
+    (st==="ng"?penCross:penCheck)(g,cx,cy,s,col);
+  });
   d.finds.filter(f=>f.pin).forEach(f=>{const x=f.pin.x/100*c.width, y=f.pin.y/100*c.height;
     g.fillStyle=f.status==="done"?"#17834a":"#cf3527"; g.strokeStyle="#fff"; g.lineWidth=3;
     g.beginPath(); g.arc(x,y-r,r,0,Math.PI*2); g.fill(); g.stroke();
@@ -1029,7 +1041,7 @@ async function pdfReportPages(){
   const pl=await planWithPins();
   const rx=1510, rw=PDF_W-M-rx; let ry=y;
   if(pl){ const plImg=await loadImg(pl.url);
-    pdfText(g,"キープラン（赤：未是正　緑：是正確認済み）",rx,ry+14,{size:22,bold:true}); ry+=32;
+    pdfText(g,"キープラン（✓：確認済み　×：指摘あり　ピン 赤：未是正　緑：是正確認済み）",rx,ry+14,{size:22,bold:true}); ry+=32;
     const ph=Math.min(rw*pl.h/pl.w, 700); const pw=ph*pl.w/pl.h; g.drawImage(plImg,rx,ry,pw,ph); g.strokeStyle="#555"; g.strokeRect(rx,ry,pw,ph); ry+=ph+24; }
   pdfText(g,"指摘事項",rx,ry+14,{size:22,bold:true}); ry+=32;
   const fcols=[60,200,rw-60-200-80-130,80,130];
@@ -1493,7 +1505,7 @@ async function exportXlsx(btn){
     if(pr===2) wp.getCell("B2").value="写真なし";
     /* 4. キープラン */
     const wk=wb.addWorksheet("キープラン",{pageSetup:{paperSize:8,orientation:"landscape",fitToPage:true,fitToWidth:1,fitToHeight:1}});
-    wk.getCell("A1").value=i.title+"　キープラン（赤：未是正　緑：是正確認済み）"; wk.getCell("A1").font={name:"游ゴシック",size:12,bold:true};
+    wk.getCell("A1").value=i.title+"　キープラン（✓：確認済み　×：指摘あり　ピン 赤：未是正　緑：是正確認済み）"; wk.getCell("A1").font={name:"游ゴシック",size:12,bold:true};
     const pl=await planWithPins();
     if(pl){ const pid=wb.addImage({base64:pl.url,extension:"png"}); const pw=1100;
       wk.addImage(pid,{tl:{col:0,row:1.2},ext:{width:pw,height:Math.round(pw*pl.h/pl.w)}}); }
