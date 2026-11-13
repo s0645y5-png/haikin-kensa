@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.11.13-3";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.11.13-4";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -265,7 +265,7 @@ function render(){
   else if(UI.tab==="dwg") v.innerHTML = viewDwg();
   else v.innerHTML = viewSheet();
   if(UI.tab==="finds") hydrateThumbs();
-  if(UI.tab==="plan") attachPlanGestures();
+  if(UI.tab==="plan"){ usePlanImg(); attachPlanGestures(); }
   initSectPanel();
   window.scrollTo(0, UI.keepScroll||0); UI.keepScroll=0;
 }
@@ -294,6 +294,41 @@ function viewList(){
     <div id="listbody">${listBody()}</div>`;
 }
 document.addEventListener("input", e=>{ if(e.target.id!=="list-q") return; UI.lq=e.target.value; const b=$("#listbody"); if(b) b.innerHTML=listBody(); });
+/* 部材カード：左右にスワイプで前・次の部材へ。断面リストの窓（図をずらす操作）・✓のボタン・下のボタンの上と、
+   画面の端（iPhone の「戻る」操作と重なる）から始めたときは使わない。縦のスクロールが先に始まったらスワイプにしない */
+let cardSw=null;
+const cardSwEls=()=>document.querySelectorAll("#view > .back, #view > .card-head, #view > .cardbody");
+function cardSwMove(x, ms){ cardSwEls().forEach(el=>{ el.style.transition=ms?`transform ${ms}ms ease-out`:"none"; el.style.transform=x?`translateX(${x}px)`:""; }); }
+document.addEventListener("touchstart", e=>{
+  cardSw=null;
+  if(UI.tab!=="list" || UI.card==null || e.touches.length!==1 || $("#overlay").firstChild) return;
+  const t=e.touches[0], tg=e.target;
+  if(!tg.closest("#view") || tg.closest(".sectpanel,.seg,.card-foot,input,textarea,select")) return;
+  if(t.clientX<24 || t.clientX>innerWidth-24) return;
+  cardSw={x:t.clientX, y:t.clientY, t:Date.now(), on:false, dx:0};
+},{passive:true});
+document.addEventListener("touchmove", e=>{
+  if(!cardSw) return; if(e.touches.length!==1){ cardSw=null; cardSwMove(0,180); return; }
+  const t=e.touches[0], dx=t.clientX-cardSw.x, dy=t.clientY-cardSw.y;
+  if(!cardSw.on){
+    if(Math.abs(dy)>10 && Math.abs(dy)>=Math.abs(dx)){ cardSw=null; return; }   /* 縦のスクロール */
+    if(Math.abs(dx)<14 || Math.abs(dx)<Math.abs(dy)*1.5) return;
+    cardSw.on=true;
+  }
+  e.preventDefault(); cardSw.dx=dx;
+  const can=stepTarget(UI.card, dx<0?1:-1)!=null;   /* 先に部材がないときは少しだけ動いて戻る */
+  cardSwMove(dx*(can?0.6:0.15), 0);
+},{passive:false});
+document.addEventListener("touchend", ()=>{
+  if(!cardSw || !cardSw.on){ cardSw=null; return; }
+  const dx=cardSw.dx, dt=Date.now()-cardSw.t; cardSw=null;
+  const dir=dx<0?1:-1, j=stepTarget(UI.card, dir);
+  if(j!=null && UI.tab==="list" && UI.card!=null && (Math.abs(dx)>innerWidth*0.25 || (Math.abs(dx)>50 && dt<300))){
+    cardSwMove(0,0); UI.card=j; render();
+    if(!matchMedia("(prefers-reduced-motion: reduce)").matches) cardSwEls().forEach(el=>el.animate&&el.animate([{transform:`translateX(${dir*48}px)`,opacity:.3},{transform:"none",opacity:1}],{duration:170,easing:"ease-out"}));
+  } else cardSwMove(0,180);
+});
+document.addEventListener("touchcancel", ()=>{ if(cardSw&&cardSw.on) cardSwMove(0,180); cardSw=null; });
 function stepTarget(mi,dir){ const n=insp().members.length; for(let j=mi+dir;j>=0&&j<n;j+=dir) if(isTarget(j)) return j; return null; }
 function viewCard(mi){
   const d=D(), ms=insp().members, m=ms[mi], ma=master(m), sp=SPEC[m.t], st=memberStat(mi);
@@ -345,7 +380,7 @@ function viewPlan(){
   const selbar= ed? `<div class="selmsg"><span>検査対象をタップで選ぶ（<b class="num">${nSel}</b> / ${i.members.length}部材）</span><span class="selbtns"><button data-act="selall">全部</button><button data-act="selnone">外す</button><button data-act="selcancel">やめる</button><button data-act="seldone" class="primary">決定</button></span></div>`
     : `<button class="btn selbtn" data-act="seledit">検査対象を選ぶ</button>`;
   return `${pick}${UI.pick?"":selbar}<div class="planbar"><span class="note">${esc(i.place)}</span><span class="zoom"><button data-act="zoom" data-z="-1" aria-label="縮小">－</button><button data-act="zoom" data-z="1" aria-label="拡大">＋</button><button data-act="zoomfit" style="width:auto;padding:0 10px">全体</button></span></div>
-  <div class="planbox"><div class="planwrap ${UI.pick?"picking":""}${ed?" selecting":""}" id="planwrap" style="width:${UI.zoom*100}%"><img src="${esc(safeImg(i.plan))}" alt="${esc(i.title)} キープラン" id="planimg" style="width:100%">${hs}${pins}</div></div>
+  <div class="planbox"><div class="planwrap ${UI.pick?"picking":""}${ed?" selecting":""}" id="planwrap" style="width:${UI.zoom*100}%"><img alt="${esc(i.title)} キープラン" id="planimg" style="width:100%">${hs}${pins}</div></div>
   <div class="legend">${ed? `<span style="--c:#007aff">検査対象</span><span class="ring" style="--c:#8e8e93">対象外</span>`
     : `<span class="ring" style="--c:#007aff">未着手</span><span style="--c:#007aff">途中</span><span style="--c:#34c759">完了</span><span style="--c:#ff3b30">指摘あり</span>${D().sel?`<span class="ring" style="--c:#8e8e93">対象外</span>`:""}`}</div>
   <p class="note">${ed?"輪だけの部材をタップすると青（検査対象）になり、もう一度タップすると輪だけに戻ります。選び終わったら「決定」を押してください。記録や指摘がある部材は外せません。"
@@ -360,6 +395,13 @@ function planZoomTo(z, px, py){
   const old=UI.zoom, cx=(box.scrollLeft+px)/old, cy=(box.scrollTop+py)/old;
   UI.zoom=z; wrap.style.width=z*100+"%";
   box.scrollLeft=cx*z-px; box.scrollTop=cy*z-py;
+}
+/* キープランの図：一度読み込んだ図を残しておき、タブを開くたびに読み込み直さない（同じ検査の図なら使い回す） */
+let PLAN_IMG=null;
+function usePlanImg(){
+  const ph=$("#planimg"), i=insp(); if(!ph) return;
+  if(PLAN_IMG && PLAN_IMG._src===i.plan){ PLAN_IMG.alt=ph.alt; ph.replaceWith(PLAN_IMG); return; }
+  ph.decoding="async"; ph.src=safeImg(i.plan); ph._src=i.plan; PLAN_IMG=ph;
 }
 function attachPlanGestures(){
   const box=document.querySelector(".planbox"), wrap=$("#planwrap"); if(!box||!wrap) return;
@@ -436,7 +478,7 @@ function findCard(f){
   return `<article class="find ${f.status==="done"?"done":""}">
    <div class="find-h"><span class="no">${f.no}</span><span class="where">${m?esc(m.sym+"　"+m.loc):"全般"}</span><span class="note">${esc(f.item?f.item.replace("/"," ・ "):"")}</span><span class="stat">${f.status==="done"?"是正確認 "+esc(md(f.doneDate)):"未是正"}</span></div>
    <p>${esc(f.text)}</p>
-   ${f.photos.length?`<div class="thumbs">${f.photos.map(p=>`<figure><img data-photo="${p}" alt="指摘${f.no}の写真"></figure>`).join("")}</div>`:""}
+   ${f.photos.length?`<div class="thumbs">${f.photos.map(p=>`<figure><img data-photo="${esc(p)}" alt="指摘${f.no}の写真"></figure>`).join("")}</div>`:""}
    ${f.status==="done"?`<div class="note">確認方法：${esc(f.method||"")}</div>`:""}
    <div class="acts"><button class="btn" data-act="editfind" data-id="${esc(f.id)}">編集</button>${f.status==="done"?`<button class="btn" data-act="undone" data-id="${esc(f.id)}">未是正に戻す</button>`:`<button class="btn primary" data-act="done" data-id="${esc(f.id)}">是正確認した</button>`}${f.pin?`<button class="btn" data-act="showpin" data-id="${esc(f.id)}">図面で見る</button>`:""}</div>
   </article>`;
@@ -495,7 +537,7 @@ function viewSheet(){
   <p class="note" style="text-align:right">アプリの版 ${APP_VERSION}</p>`;
 }
 async function hydrateThumbs(){
-  for(const img of document.querySelectorAll("img[data-photo]")){ const v=await photo(img.dataset.photo); if(v) img.src=v; }
+  await Promise.all([...document.querySelectorAll("img[data-photo]")].map(async img=>{ img.decoding="async"; const v=await photo(img.dataset.photo); if(v) img.src=v; }));
 }
 
 /* ===== 指摘入力シート ===== */
@@ -540,7 +582,9 @@ async function inkPhoto(id){
 }
 async function drawSheetThumbs(){
   const box=$("#fs-thumbs"); if(!box) return;
-  const arr=[]; for(const id of UI.draft.photos){ arr.push(`<figure><img src="${esc(safeImg(await photo(id)))}" alt="写真" data-act="inkphoto" data-id="${esc(id)}"><button data-act="rmphoto" data-id="${esc(id)}" aria-label="写真を外す">×</button><button class="ed" data-act="inkphoto" data-id="${esc(id)}" aria-label="写真に書き込む">✎</button></figure>`); }
+  const ids=UI.draft.photos, urls=await Promise.all(ids.map(photo));   /* 写真をまとめて読み込む */
+  if(!UI.draft || UI.draft.photos!==ids || !box.isConnected) return;   /* 読み込み中に写真を外した・閉じたときは、後の呼び出しに任せる */
+  const arr=[]; for(const [k,id] of ids.entries()){ arr.push(`<figure><img src="${esc(safeImg(urls[k]))}" alt="写真" data-act="inkphoto" data-id="${esc(id)}"><button data-act="rmphoto" data-id="${esc(id)}" aria-label="写真を外す">×</button><button class="ed" data-act="inkphoto" data-id="${esc(id)}" aria-label="写真に書き込む">✎</button></figure>`); }
   box.innerHTML=arr.join("");
 }
 function shrink(file){
