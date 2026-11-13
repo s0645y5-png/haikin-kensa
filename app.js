@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.11.13-4";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.11.13-5";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -294,12 +294,65 @@ function viewList(){
     <div id="listbody">${listBody()}</div>`;
 }
 document.addEventListener("input", e=>{ if(e.target.id!=="list-q") return; UI.lq=e.target.value; const b=$("#listbody"); if(b) b.innerHTML=listBody(); });
-/* 部材カード：左右にスワイプで前・次の部材へ。断面リストの窓（図をずらす操作）・✓のボタン・下のボタンの上と、
-   画面の端（iPhone の「戻る」操作と重なる）から始めたときは使わない。縦のスクロールが先に始まったらスワイプにしない */
-let cardSw=null;
-const cardSwEls=()=>document.querySelectorAll("#view > .back, #view > .card-head, #view > .cardbody");
-function cardSwMove(x, ms){ cardSwEls().forEach(el=>{ el.style.transition=ms?`transform ${ms}ms ease-out`:"none"; el.style.transform=x?`translateX(${x}px)`:""; }); }
+/* 部材カード：左右にスワイプで前・次の部材へ。構造図のページ送りと同じ動き（隣の部材のカードが横から指に付いてきて、
+   離すと減速しながら滑り込む。先に部材がないときは少しだけ動いて戻る）。
+   断面リストの窓（図をずらす操作）・✓のボタン・下のボタンの上と、画面の端（iPhone の「戻る」操作と重なる）から始めたとき、
+   縦のスクロールが先に始まったときは使わない */
+let cardSw=null, CS=null;   /* cardSw：指の状態。CS：動かしている間の表示（今のカード・隣のカード） */
+const cardSwEls=()=>[...document.querySelectorAll("#view > .back, #view > .card-head, #view > .cardbody")];
+function csStart(){
+  const v=$("#view"), cs=getComputedStyle(v), pt=parseFloat(cs.paddingTop)||0, hd=document.querySelector("header.top");
+  /* 下までスクロールしているときは、隣のカードを見えている所の上端から出す（切り替え後もその位置で始まる） */
+  const shift=Math.max(0, (hd?hd.getBoundingClientRect().bottom:0)+8-(v.getBoundingClientRect().top+pt));
+  CS={els:cardSwEls(), w:v.clientWidth, top:pt+shift, shift, peek:null, peekDir:0, x:0, anim:false};
+  v.style.position="relative"; v.style.overflowX="clip";
+  CS.els.forEach(e=>e.style.willChange="transform");
+}
+/* 隣の部材のカードを作る（今のカードの横に置く。ボタンは押せない見本） */
+function csPeek(dir){
+  if(CS.peekDir===dir) return CS.peek;
+  if(CS.peek){ CS.peek.remove(); CS.peek=null; CS.peekImg=null; }
+  CS.peekDir=dir; const j=stepTarget(UI.card,dir); if(j==null) return null;
+  const v=$("#view"), cs=getComputedStyle(v), el=document.createElement("div");
+  el.setAttribute("aria-hidden","true");
+  el.innerHTML=viewCard(j).replace(/\sid="[^"]*"/g,"");
+  el.querySelectorAll(".card-foot").forEach(x=>x.remove());
+  Object.assign(el.style,{position:"absolute", left:cs.paddingLeft, right:cs.paddingRight, top:CS.top+"px", display:"grid", rowGap:cs.rowGap, pointerEvents:"none", willChange:"transform"});
+  v.appendChild(el); CS.peek=el; CS.j=j;
+  const box=el.querySelector(".sp-box"), m=insp().members[j], r=sectFor(m);
+  if(box && r){ const pv=sectView(box, r, LIST_PAGES[r[0]], null, {}), s=UI.spState;
+    if(s && s.uid===m.uid) pv.restore(s.z,s.sl,s.st); else pv.fit(true); CS.peekImg=pv.img; }
+  csPlace(CS.x); return el;
+}
+function csPlace(x){
+  CS.x=x; CS.els.forEach(e=>e.style.transform=`translateX(${x}px)`);
+  if(CS.peek) CS.peek.style.transform=`translateX(${x+CS.peekDir*CS.w}px)`;
+}
+function csClear(){
+  if(!CS) return; if(CS.peek) CS.peek.remove();
+  CS.els.forEach(e=>{ e.style.transform=""; e.style.willChange=""; });
+  const v=$("#view"); v.style.position=""; v.style.overflowX=""; CS=null;
+}
+/* from → to まで減速しながら動かす（構造図の dwgAnimate と同じ速さ・動き） */
+function csAnimate(from, to, done){
+  const dist=Math.abs(to-from), ms=Math.max(360, Math.min(720, dist/CS.w*930));
+  const all=[...CS.els, ...(CS.peek?[CS.peek]:[])];
+  if(matchMedia("(prefers-reduced-motion: reduce)").matches || !all[0].animate || dist<1){ csPlace(to); done(); return; }
+  CS.anim=true;
+  const opt={duration:ms, easing:"cubic-bezier(.22,.8,.3,1)", fill:"forwards"};
+  const ans=all.map(e=>{ const off=e===CS.peek? CS.peekDir*CS.w : 0;
+    return e.animate([{transform:`translateX(${from+off}px)`},{transform:`translateX(${to+off}px)`}], opt); });
+  let fired=false; const f=()=>{ if(fired) return; fired=true; csPlace(to); ans.forEach(a=>a.cancel()); done(); };
+  ans[0].onfinish=f; setTimeout(f, ms+80);
+}
+/* 隣のカードに切り替える。隣のカードで読み込んだ断面リストの図はそのまま使う */
+function csFinish(){
+  const j=CS.j, shift=CS.shift, img=CS.peekImg; csClear();
+  if(img) SP_IMG=img;
+  UI.card=j; UI.keepScroll=Math.max(0, window.scrollY-shift); render();
+}
 document.addEventListener("touchstart", e=>{
+  if(CS) return;   /* 滑り込みの途中 */
   cardSw=null;
   if(UI.tab!=="list" || UI.card==null || e.touches.length!==1 || $("#overlay").firstChild) return;
   const t=e.touches[0], tg=e.target;
@@ -308,27 +361,26 @@ document.addEventListener("touchstart", e=>{
   cardSw={x:t.clientX, y:t.clientY, t:Date.now(), on:false, dx:0};
 },{passive:true});
 document.addEventListener("touchmove", e=>{
-  if(!cardSw) return; if(e.touches.length!==1){ cardSw=null; cardSwMove(0,180); return; }
+  if(!cardSw) return;
+  if(e.touches.length!==1){ const on=cardSw.on; cardSw=null; if(on && CS) csAnimate(CS.x, 0, csClear); return; }
   const t=e.touches[0], dx=t.clientX-cardSw.x, dy=t.clientY-cardSw.y;
   if(!cardSw.on){
     if(Math.abs(dy)>10 && Math.abs(dy)>=Math.abs(dx)){ cardSw=null; return; }   /* 縦のスクロール */
-    if(Math.abs(dx)<14 || Math.abs(dx)<Math.abs(dy)*1.5) return;
-    cardSw.on=true;
+    if(Math.abs(dx)<10 || Math.abs(dx)<Math.abs(dy)*1.2) return;
+    cardSw.on=true; cardSw.x=t.clientX-(dx>0?1:-1); csStart();   /* 動き始めの位置から指に付いてくる */
   }
-  e.preventDefault(); cardSw.dx=dx;
-  const can=stepTarget(UI.card, dx<0?1:-1)!=null;   /* 先に部材がないときは少しだけ動いて戻る */
-  cardSwMove(dx*(can?0.6:0.15), 0);
+  e.preventDefault();
+  const d=t.clientX-cardSw.x, peek=csPeek(d<0?1:-1);
+  cardSw.dx=d; csPlace(peek? d : d*0.3);   /* その先に部材がないときは少しだけ動く（端の手応え） */
 },{passive:false});
 document.addEventListener("touchend", ()=>{
-  if(!cardSw || !cardSw.on){ cardSw=null; return; }
+  if(!cardSw || !cardSw.on || !CS){ cardSw=null; return; }
   const dx=cardSw.dx, dt=Date.now()-cardSw.t; cardSw=null;
-  const dir=dx<0?1:-1, j=stepTarget(UI.card, dir);
-  if(j!=null && UI.tab==="list" && UI.card!=null && (Math.abs(dx)>innerWidth*0.25 || (Math.abs(dx)>50 && dt<300))){
-    cardSwMove(0,0); UI.card=j; render();
-    if(!matchMedia("(prefers-reduced-motion: reduce)").matches) cardSwEls().forEach(el=>el.animate&&el.animate([{transform:`translateX(${dir*48}px)`,opacity:.3},{transform:"none",opacity:1}],{duration:170,easing:"ease-out"}));
-  } else cardSwMove(0,180);
+  const dir=dx<0?1:-1, peek=csPeek(dir), speed=Math.abs(dx)/Math.max(dt,1);
+  const go=!!peek && (Math.abs(dx)>CS.w*0.3 || (speed>0.45 && Math.abs(dx)>30));
+  csAnimate(CS.x, go? -dir*CS.w : 0, go? csFinish : csClear);
 });
-document.addEventListener("touchcancel", ()=>{ if(cardSw&&cardSw.on) cardSwMove(0,180); cardSw=null; });
+document.addEventListener("touchcancel", ()=>{ const on=cardSw&&cardSw.on; cardSw=null; if(on && CS && !CS.anim) csAnimate(CS.x, 0, csClear); });
 function stepTarget(mi,dir){ const n=insp().members.length; for(let j=mi+dir;j>=0&&j<n;j+=dir) if(isTarget(j)) return j; return null; }
 function viewCard(mi){
   const d=D(), ms=insp().members, m=ms[mi], ma=master(m), sp=SPEC[m.t], st=memberStat(mi);
