@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.11.03-1";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.11.13-1";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -1136,6 +1136,19 @@ function rowPitch(g, r){
   const cnt={}; for(let k=1;k<lines.length;k++){ const dd=lines[k]-lines[k-1]; if(dd>=14&&dd<=40) cnt[dd]=(cnt[dd]||0)+1; }
   const best=Object.entries(cnt).sort((a,b)=>b[1]-a[1])[0]; return best? +best[0] : 28.6;
 }
+/* 壁の断面の絵の上にある壁厚の寸法（例：「180」）の位置。断面の欄（符号の行と縦筋の行の間）の上半分を、上から黒い部分のかたまりごとに見て、
+   縦に長いかたまり（壁の絵）のすぐ上にある文字（「上」の次）を寸法とみなす。見つからなければ null */
+function wallThickPos(g, r, ph){
+  const x0=r[1]+6, w=r[3]-r[1]-12, top=Math.round(r[2]+ph*1.2), bot=Math.round(r[4]-ph*6-2), H=bot-top;
+  if(w<20||H<40) return null;
+  const data=g.getImageData(x0,top,w,H).data, rows=[];
+  for(let y=0;y<H;y++){ let a=-1,b=-1; for(let x=0;x<w;x++){ if(data[(y*w+x)*4]<128){ if(a<0) a=x; b=x; } } rows.push(a<0?null:[a,b]); }
+  const blobs=[]; let cur=null;
+  rows.forEach((v,y)=>{ if(v){ if(cur&&y-cur.y1<=2){ cur.y1=y; cur.a=Math.min(cur.a,v[0]); cur.b=Math.max(cur.b,v[1]); } else blobs.push(cur={y0:y,y1:y,a:v[0],b:v[1]}); } });
+  const tall=blobs.findIndex(o=>o.y1-o.y0>H*0.2); if(tall<1) return null;
+  const txt=blobs.slice(0,tall).filter(o=>o.y1-o.y0>5).pop(); if(!txt) return null;
+  return {x:x0+txt.b, y:top+(txt.y0+txt.y1)/2, h:txt.y1-txt.y0};
+}
 async function pdfSectPages(){
   const i=insp(), d=D(), ms=i.members, first=d.firstAt||{};
   /* 符号ごとに、最初に記録した部材を選ぶ（時刻がなければ並び順） */
@@ -1157,6 +1170,11 @@ async function pdfSectPages(){
         continue;
       }
       const ph=rowPitch(g,r), s=Math.min(ph*0.85,26);
+      if(t==="wall"){   /* 壁厚：断面の絵の上の寸法の右に（見つからなければ断面の欄の上の方に） */
+        const st=keysStatus(itemKeys(t).filter(k=>k.startsWith("壁厚/")),mi);
+        if(st){ const pos=wallThickPos(g,r,ph), cx=pos? pos.x+s*0.9 : r[1]+w*0.7, cy=pos? pos.y : r[2]+ph*1.2+(r[4]-r[2]-ph*7.2)*0.2;
+          (st==="ng"?penCross:penCheck)(g,cx,cy,s,st==="ng"?PEN_NG:PEN_OK); }
+      }
       for(const [k,keys] of sectRows(t)){
         const st=keysStatus(keys,mi); if(!st) continue;
         const cy=r[4]-ph*(k-0.5);
