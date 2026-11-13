@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.11.13-1";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.11.13-2";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -1008,7 +1008,7 @@ const PDF_FONT='"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo"
 const PEN_OK="#1849a9", PEN_NG="#d0271a";   /* 断面リストへの書き込み：✓は青ペン、×は赤ペン */
 function pdfCanvas(w=PDF_W,h=PDF_H){ const c=document.createElement("canvas"); c.width=w; c.height=h; const g=c.getContext("2d"); g.fillStyle="#fff"; g.fillRect(0,0,w,h); return c; }
 function pdfText(g,s,x,y,o={}){ g.font=(o.bold?"bold ":"")+(o.size||22)+"px "+PDF_FONT; g.fillStyle=o.color||"#111"; g.textAlign=o.align||"left"; g.textBaseline=o.base||"middle"; g.fillText(String(s??""),x,y); }
-function pdfWrap(g,s,maxW,size){ g.font=size+"px "+PDF_FONT; const out=[]; for(const para of String(s??"").split("\n")){ let line=""; for(const ch of para){ if(g.measureText(line+ch).width>maxW && line){ out.push(line); line=ch; } else line+=ch; } out.push(line); } return out; }
+function pdfWrap(g,s,maxW,size){ g.font=size+"px "+PDF_FONT; const out=[]; for(const para of String(s??"").split("\n")){ let line=""; for(const ch of para){ if(g.measureText(line+ch).width>maxW && line && !"、。，．,.）」』】・ーっゃゅょッャュョ".includes(ch)){ out.push(line); line=ch; } else line+=ch; } out.push(line); } return out; }
 function pdfRect(g,x,y,w,h,fill){ if(fill){ g.fillStyle=fill; g.fillRect(x,y,w,h); } g.strokeStyle="#555"; g.lineWidth=1.5; g.strokeRect(x,y,w,h); }
 function penCheck(g,cx,cy,s,color){ g.save(); g.strokeStyle=color; g.lineWidth=Math.max(3,s*0.16); g.lineCap="round"; g.lineJoin="round";
   g.beginPath(); g.moveTo(cx-s*0.45,cy-s*0.02); g.lineTo(cx-s*0.12,cy+s*0.38); g.lineTo(cx+s*0.5,cy-s*0.48); g.stroke(); g.restore(); }
@@ -1024,79 +1024,136 @@ function recordedIdx(t){
   return anyRec? rec : all;
 }
 
+/* ---- 帳票の見た目（色・見出し・札・ページ下の表示） ---- */
+const PC={ink:"#1d1d1f", mute:"#86868b", line:"#dcdce1", rule:"#aeaeb4", edge:"#6e6e73", tint:"#f5f5f7", ngbg:"#fff1f0", ng:"#d92d20", ok:"#248a3d", okbg:"#eaf6ec", blue:"#0071e3"};
+const PDF_BOT=PDF_H-110;   /* 本文を描ける下端（その下はページ番号などの欄） */
+function pdfRR(g,x,y,w,h,r){ g.beginPath(); if(g.roundRect) g.roundRect(x,y,w,h,r); else g.rect(x,y,w,h); }
+/* 角の丸い札（文字の高さの中心が y）。o.right なら x が右端。幅を返す */
+function pdfPill(g,s,x,y,o={}){ const size=o.size||18; g.font="bold "+size+"px "+PDF_FONT; const w=g.measureText(s).width+size*1.3, h=size*1.7;
+  if(o.right) x-=w; pdfRR(g,x,y-h/2,w,h,h/2); g.fillStyle=o.bg||PC.tint; g.fill();
+  g.fillStyle=o.fg||PC.ink; g.textAlign="left"; g.textBaseline="middle"; g.fillText(s,x+size*0.65,y+1); return w; }
+/* 入りきらない文字は小さくする（下限 min） */
+function pdfFit(g,s,x,y,maxW,o={}){ let size=o.size||22; const min=o.min||14; s=String(s??"");
+  for(;size>min;size--){ g.font=(o.bold?"bold ":"")+size+"px "+PDF_FONT; if(g.measureText(s).width<=maxW) break; }
+  pdfText(g,s,x,y,Object.assign({},o,{size})); }
+/* ページの見出し：小さい文字の上書き＋大きい表題。表題の下端の y を返す */
+function pdfTitle(g,sub,title,M){ pdfText(g,sub,M,M+12,{size:20,color:PC.mute}); pdfText(g,title,M,M+60,{size:50,bold:true,color:PC.ink}); return M+92; }
+function pdfSecTitle(g,s,note,x,y){
+  pdfText(g,s,x,y+17,{size:26,bold:true,color:PC.ink}); if(note){ g.font="bold 26px "+PDF_FONT; pdfText(g,note,x+g.measureText(s).width+14,y+19,{size:19,color:PC.mute}); } return y+46; }
+/* 指摘の表（帳票ページの右側と、入りきらなかった続きのページで共通）。描けた行の下端と、入りきらなかった指摘を返す */
+function pdfFindTable(g,x,y,cols,finds,ms){
+  const W=cols.reduce((a,b)=>a+b,0), head=["No","部材・位置","指摘事項・処理方法","判定","確認日"];
+  g.fillStyle=PC.tint; g.fillRect(x,y,W,40);
+  let xx=x; head.forEach((s,j)=>{ pdfText(g,s,xx+cols[j]/2,y+20,{size:17,align:"center",color:PC.mute}); xx+=cols[j]; }); y+=40;
+  g.fillStyle=PC.edge; g.fillRect(x,y-2,W,2);
+  const rest=[];
+  for(const f of finds){
+    const m=ms[f.mi]||{}, lines=pdfWrap(g,f.text,cols[2]-24,20), loc=pdfWrap(g,m.loc||"",cols[1]-20,16), item=(f.item||"").replace("/"," ");
+    const rh=Math.max(lines.length*28+22, 34+loc.length*21+(item?22:0)+12);
+    if(rest.length || y+rh>PDF_BOT){ rest.push(f); continue; }   /* 1件でもはみ出したら、残りは番号順のまま次へ */
+    xx=x; const cx=xx+cols[0]/2, cy=y+26;
+    g.fillStyle=f.status==="done"?PC.ok:PC.ng; g.beginPath(); g.arc(cx,cy,16,0,Math.PI*2); g.fill();
+    pdfText(g,String(f.no),cx,cy+1,{size:18,bold:true,align:"center",color:"#fff"}); xx+=cols[0];
+    pdfText(g,m.sym||"",xx+10,y+24,{size:20,bold:true});
+    loc.forEach((l,k)=>pdfText(g,l,xx+10,y+48+k*21,{size:16,color:PC.mute}));
+    if(item) pdfText(g,item,xx+10,y+48+loc.length*21,{size:16,color:PC.mute}); xx+=cols[1];
+    lines.forEach((l,k)=>pdfText(g,l,xx+12,y+25+k*28,{size:20})); xx+=cols[2];
+    if(f.status==="done"){ pdfPill(g,"是正済",xx+cols[3]/2-34,y+26,{size:17,bg:PC.okbg,fg:PC.ok}); pdfText(g,md(f.doneDate),xx+cols[3]+cols[4]/2,y+26,{size:19,align:"center"}); }
+    else { pdfPill(g,"未是正",xx+cols[3]/2-34,y+26,{size:17,bg:PC.ngbg,fg:PC.ng}); pdfText(g,"—",xx+cols[3]+cols[4]/2,y+26,{size:19,align:"center",color:PC.mute}); }
+    y+=rh; g.fillStyle=PC.rule; g.fillRect(x,y-1.5,W,1.5);
+  }
+  return {y, rest};
+}
+/* 帳票ページの下の表示（帳票名・作成日時・ページ番号）。全ページそろってから付ける。写真・断面リストのページには付けない */
+function pdfDecorate(pages){
+  const i=insp(), n=pages.length, now=new Date(), p2=v=>String(v).padStart(2,"0");
+  const made="作成 "+now.getFullYear()+"/"+p2(now.getMonth()+1)+"/"+p2(now.getDate())+" "+p2(now.getHours())+":"+p2(now.getMinutes());
+  pages.forEach((c,k)=>{ const g=c.getContext("2d"), pg=(k+1)+" / "+n;
+    if(!String(c.inkKey||"").startsWith("r")) return;
+    const M=60, y=PDF_H-50; g.fillStyle=PC.line; g.fillRect(M,y-28,PDF_W-2*M,1.5);
+    pdfText(g,"監理者（構造）配筋検査帳票　"+i.title,M,y,{size:17,color:PC.mute});
+    pdfText(g,made,PDF_W/2,y,{size:17,align:"center",color:PC.mute});
+    pdfText(g,pg,PDF_W-M,y,{size:19,bold:true,align:"right",color:PC.ink}); });
+}
+
 /* ---- 1. 帳票ページ ---- */
 async function pdfReportPages(){
   const i=insp(), d=D(), h=d.head, ms=i.members, pages=[];
-  const M=60, mark={ok:"✓",ng:"×",na:"－"};
+  const M=60;
   let c, g, y, x0, xr;   /* xr：表を描ける右端 */
-  const header=()=>{ pdfText(g,"監理者（構造）配筋検査帳票　"+i.title,M,M+18,{size:38,bold:true});
-    pdfText(g,"検査日 "+fmtDate(h.date)+"　　検査方法 "+(h.method||""),PDF_W-M,M+18,{size:24,align:"right"});
-    const rows=[["工事名称",PROJECT.name,"検査箇所",i.place],["監理担当者",h.kanri,"現場担当者",h.genba],["是正確認者",h.zesei,"","" ]];
-    const cw=[180,980,180,980]; let yy=M+52;
-    rows.forEach(r=>{ let xx=M; r.forEach((v,j)=>{ if(j>=2&&!r[2]){ xx+=cw[j]; return; } pdfRect(g,xx,yy,cw[j],40,j%2===0?"#eaf0fa":null); pdfText(g,v,xx+10,yy+20,{size:22}); xx+=cw[j]; }); yy+=40; });
-    return yy+20; };
+  const tt=totals(), open=d.finds.filter(f=>f.status!=="done").length;
+  const header=()=>{
+    pdfTitle(g,"監理者（構造）配筋検査帳票",i.title,M);
+    /* 右上の集計 */
+    let rx=PDF_W-M; const py=M+56;
+    if(d.finds.length) rx-=pdfPill(g,open? "未是正 "+open : "すべて是正済",rx,py,{size:20,right:true,bg:open?PC.ngbg:PC.okbg,fg:open?PC.ng:PC.ok})+12;
+    rx-=pdfPill(g,"指摘 "+d.finds.length+"件",rx,py,{size:20,right:true})+12;
+    pdfPill(g,"完了 "+tt.done+" / "+tt.all,rx,py,{size:20,right:true});
+    /* 工事名・検査日・担当者：枠で囲まず、小さな項目名＋太字の内容を横に並べる */
+    const info=[["工事名称",PROJECT.name,700],["検査箇所",i.place,520],["検査日",fmtDate(h.date),210],["検査方法",h.method,230],["監理担当者",h.kanri,240],["現場担当者",h.genba,240],["是正確認者",h.zesei,220]];
+    let xx=M; const iy=M+118;
+    info.forEach(([lab,v,w])=>{
+      pdfText(g,lab,xx,iy+4,{size:16,color:PC.mute}); pdfFit(g,v||"—",xx,iy+34,w-34,{size:24,bold:!!v,color:v?PC.ink:PC.mute}); xx+=w; });
+    g.fillStyle=PC.edge; g.fillRect(M,iy+64,PDF_W-2*M,2);
+    return iy+92; };
   const newPage=(withRight)=>{ c=pdfCanvas(); g=c.getContext("2d"); pages.push(c); y=header(); x0=M; xr=withRight? 1470 : PDF_W-M; };
   newPage(true);
   /* 右側：キープラン（指摘ピン入り）と指摘事項 */
   const pl=await planWithPins();
-  const rx=1510, rw=PDF_W-M-rx; let ry=y;
+  const rx=1520, rw=PDF_W-M-rx; let ry=y;
   if(pl){ const plImg=await loadImg(pl.url);
+    /* キープランの図は以前のまま（枠・凡例も変えない） */
     pdfText(g,"キープラン",rx,ry+14,{size:22,bold:true});
     pdfText(g,"✓：確認済み　×：指摘あり　ピン 赤：未是正　緑：是正確認済み",rx+130,ry+15,{size:17,color:"#444"}); ry+=32;
-    const ph=Math.min(rw*pl.h/pl.w, 700); const pw=ph*pl.w/pl.h; g.drawImage(plImg,rx,ry,pw,ph); g.strokeStyle="#555"; g.strokeRect(rx,ry,pw,ph); ry+=ph+24; }
-  pdfText(g,"指摘事項",rx,ry+14,{size:22,bold:true}); ry+=32;
-  const fcols=[60,200,rw-60-200-80-130,80,130];
-  const fhead=["No","部材・位置","指摘事項・処理方法","判定","確認日"];
-  const drawFindHead=(gg,xx,yy)=>{ let x=xx; fhead.forEach((s,j)=>{ pdfRect(gg,x,yy,fcols[j],36,"#eaf0fa"); pdfText(gg,s,x+fcols[j]/2,yy+18,{size:20,align:"center"}); x+=fcols[j]; }); return yy+36; };
-  ry=drawFindHead(g,rx,ry);
-  const restFinds=[];
-  for(const f of d.finds){
-    const m=ms[f.mi]||{}; const lines=pdfWrap(g,f.text,fcols[2]-16,20), mlines=pdfWrap(g,(m.sym||"")+" "+(m.loc||"")+"\n"+(f.item||"").replace("/"," "),fcols[1]-12,18);
-    const rh=Math.max(lines.length*26,mlines.length*24)+14;
-    if(restFinds.length || ry+rh>PDF_H-M){ restFinds.push(f); continue; }   /* 1件でもはみ出したら、残りは番号順のまま次のページへ */
-    let x=rx; const cells=[String(f.no),null,null,f.status==="done"?"OK":"",f.status==="done"?md(f.doneDate):"/"];
-    cells.forEach((s,j)=>{ pdfRect(g,x,ry,fcols[j],rh); if(s!=null) pdfText(g,s,x+fcols[j]/2,ry+rh/2,{size:20,align:"center",color:j===3&&s==="OK"?"#17834a":"#111"}); x+=fcols[j]; });
-    mlines.forEach((l,k)=>pdfText(g,l,rx+fcols[0]+6,ry+18+k*24,{size:18}));
-    lines.forEach((l,k)=>pdfText(g,l,rx+fcols[0]+fcols[1]+8,ry+20+k*26,{size:20}));
-    ry+=rh;
-  }
-  if(!d.finds.length) pdfText(g,"指摘なし",rx+10,ry+24,{size:20,color:"#555"});
+    const ph=Math.min(rw*pl.h/pl.w, 700); const pw=ph*pl.w/pl.h; g.drawImage(plImg,rx,ry,pw,ph); g.strokeStyle="#555"; g.lineWidth=1; g.strokeRect(rx,ry,pw,ph); ry+=ph+24; }
+  ry=pdfSecTitle(g,"指摘事項",d.finds.length? d.finds.length+"件" : "",rx,ry);
+  const fcols=[64,230,rw-64-230-120-110,120,110];
+  let restFinds=[];
+  if(d.finds.length){ const r=pdfFindTable(g,rx,ry,fcols,d.finds,ms); ry=r.y; restFinds=r.rest; }
+  else pdfText(g,"指摘なし",rx+4,ry+20,{size:20,color:PC.mute});
   /* 左側：部材種別ごとの検査表（入りきらなければ次のページへ） */
-  const LW=150, IW=180, RH=30, HH1=34, HH2=52;
+  const LW=150, IW=190, RH=30, HH1=38, HH2=52;
   for(const t of typesHere()){
     const idx=recordedIdx(t); if(!idx.length) continue;
-    const rows=SPEC[t].groups.flatMap(gr=>gr.items.map((it,j)=>({g:gr.g, first:j===0, n:gr.items.length, k:gr.g+"/"+it, it})));
+    const rows=SPEC[t].groups.flatMap(gr=>gr.items.map((it,j)=>({g:gr.g, first:j===0, last:j===gr.items.length-1, n:gr.items.length, k:gr.g+"/"+it, it})));
     let start=0;
     while(start<idx.length){
       const avail=xr-x0-LW-IW, cw=Math.max(58,Math.min(96,avail/Math.max(1,idx.length-start))), n=Math.min(idx.length-start, Math.floor(avail/cw));
-      const part=idx.slice(start,start+n), need=38+HH1+HH2+rows.length*RH+20;
-      if(y+need>PDF_H-M){ newPage(false); continue; }
-      pdfText(g,SPEC[t].label+"（"+idx.length+"部材"+(idx.length>n?"・"+(start+1)+"〜"+(start+part.length):"")+"）",x0,y+16,{size:24,bold:true}); y+=38;
-      pdfRect(g,x0,y,LW+IW,HH1,"#eaf0fa"); pdfText(g,"符号",x0+(LW+IW)/2,y+HH1/2,{size:20,align:"center"});
-      pdfRect(g,x0,y+HH1,LW+IW,HH2,"#eaf0fa"); pdfText(g,"位置",x0+(LW+IW)/2,y+HH1+HH2/2,{size:20,align:"center"});
-      part.forEach((mi,j)=>{ const x=x0+LW+IW+j*cw, m=ms[mi];
-        pdfRect(g,x,y,cw,HH1,"#eaf0fa"); pdfText(g,m.sym,x+cw/2,y+HH1/2,{size:20,bold:true,align:"center"});
-        pdfRect(g,x,y+HH1,cw,HH2,"#eaf0fa"); const ll=pdfWrap(g,m.loc.replace("通り ","通り\n").replace(" / ","\n"),cw-6,15).slice(0,3);
-        ll.forEach((l,k)=>pdfText(g,l,x+cw/2,y+HH1+HH2/2+(k-(ll.length-1)/2)*16,{size:15,align:"center"})); });
-      let yy=y+HH1+HH2;
+      const part=idx.slice(start,start+n), need=44+HH1+HH2+rows.length*RH+28;
+      if(y+need>PDF_BOT){ newPage(false); continue; }
+      y=pdfSecTitle(g,SPEC[t].label,idx.length+"部材"+(idx.length>n?"（"+(start+1)+"〜"+(start+part.length)+"）":""),x0,y);
+      const W=LW+IW+part.length*cw, xd=x0+LW+IW, yh=y+HH1+HH2, yb=yh+rows.length*RH;
+      /* 見出し（符号・位置）とまとまりの欄は薄い灰色で塗る */
+      g.fillStyle=PC.tint; g.fillRect(x0,y,W,HH1+HH2); g.fillRect(x0,yh,LW,yb-yh);
+      pdfText(g,"符号",x0+14,y+HH1/2+1,{size:17,color:PC.mute}); pdfText(g,"位置",x0+14,y+HH1+HH2/2,{size:17,color:PC.mute});
+      part.forEach((mi,j)=>{ const x=xd+j*cw, m=ms[mi];
+        pdfFit(g,m.sym,x+cw/2,y+HH1/2+1,cw-8,{size:20,min:13,bold:true,align:"center",color:PC.ink});
+        /* 位置：2行に収まらなければ文字を小さくして3行まで（入りきらない分は「…」） */
+        const lt=m.loc.replace("通り ","通り\n").replace(" / ","\n"); let fz=15, ll=pdfWrap(g,lt,cw-6,fz);
+        if(ll.length>2){ fz=12; ll=pdfWrap(g,lt,cw-6,fz); if(ll.length>3){ ll=ll.slice(0,3); ll[2]=ll[2].slice(0,-1)+"…"; } }
+        ll.forEach((l,k)=>pdfText(g,l,x+cw/2,y+HH1+HH2/2+(k-(ll.length-1)/2)*(fz+1),{size:fz,align:"center",color:PC.mute})); });
+      g.fillStyle=PC.edge; g.fillRect(x0,yh-2,W,2);
+      let yy=yh;
       rows.forEach(r=>{
-        if(r.first){ pdfRect(g,x0,yy,LW,RH*r.n); pdfWrap(g,r.g,LW-10,19).forEach((l,k,a)=>pdfText(g,l,x0+8,yy+RH*r.n/2+(k-(a.length-1)/2)*22,{size:19})); }
-        pdfRect(g,x0+LW,yy,IW,RH); pdfText(g,r.it,x0+LW+8,yy+RH/2,{size:19});
-        part.forEach((mi,j)=>{ const x=x0+LW+IW+j*cw, v=d.res[mi+"|"+r.k];
-          pdfRect(g,x,yy,cw,RH,v==="ng"?"#fde5e2":null);
-          if(v) pdfText(g,mark[v],x+cw/2,yy+RH/2,{size:22,bold:true,align:"center",color:v==="ng"?"#cf3527":v==="ok"?"#17834a":"#888"}); });
-        yy+=RH; });
-      y=yy+20; start+=part.length;
+        if(r.first) pdfWrap(g,r.g,LW-20,19).forEach((l,k,a)=>pdfText(g,l,x0+14,yy+RH*r.n/2+(k-(a.length-1)/2)*22,{size:19,bold:true,color:PC.ink}));
+        pdfText(g,r.it,x0+LW+14,yy+RH/2,{size:18,color:"#3a3a3c"});
+        part.forEach((mi,j)=>{ const x=xd+j*cw, v=d.res[mi+"|"+r.k], cx=x+cw/2, cy=yy+RH/2;
+          if(v==="ng"){ g.fillStyle=PC.ngbg; pdfRR(g,x+4,yy+3,cw-8,RH-6,6); g.fill(); penCross(g,cx,cy,16,PC.ng); }
+          else if(v==="ok") penCheck(g,cx,cy,18,PC.blue);
+          else if(v==="na") pdfText(g,"－",cx,cy,{size:18,align:"center",color:PC.mute}); });
+        yy+=RH;
+        /* 横の線：まとまりの境目は中くらい、まとまりの中は薄く（表の下端は濃い線） */
+        if(yy>=yb) return;
+        if(r.last){ g.fillStyle=PC.rule; g.fillRect(x0,yy-1.5,W,1.5); } else { g.fillStyle=PC.line; g.fillRect(x0+LW,yy-1,W-LW,1.2); } });
+      g.fillStyle=PC.edge; g.fillRect(x0,yb-2,W,2);
+      y=yb+30; start+=part.length;
     }
   }
   /* 右側に入りきらなかった指摘事項 */
-  if(restFinds.length){ newPage(false); pdfText(g,"指摘事項（続き）",x0,y+16,{size:24,bold:true}); y+=38;
-    const W=PDF_W-2*M, cols=[70,320,W-70-320-90-160,90,160];
-    let x=x0; fhead.forEach((s,j)=>{ pdfRect(g,x,y,cols[j],36,"#eaf0fa"); pdfText(g,s,x+cols[j]/2,y+18,{size:20,align:"center"}); x+=cols[j]; }); y+=36;
-    for(const f of restFinds){ const m=ms[f.mi]||{}, lines=pdfWrap(g,f.text,cols[2]-16,20), rh=lines.length*26+14;
-      if(y+rh>PDF_H-M){ newPage(false); }
-      x=x0; [String(f.no),(m.sym||"")+" "+(m.loc||""),null,f.status==="done"?"OK":"",f.status==="done"?md(f.doneDate):"/"].forEach((s,j)=>{ pdfRect(g,x,y,cols[j],rh); if(s!=null) pdfText(g,s,j===1?x+8:x+cols[j]/2,y+rh/2,{size:20,align:j===1?"left":"center"}); x+=cols[j]; });
-      lines.forEach((l,k)=>pdfText(g,l,x0+cols[0]+cols[1]+8,y+20+k*26,{size:20})); y+=rh; } }
+  while(restFinds.length){ newPage(false); y=pdfSecTitle(g,"指摘事項（続き）","",x0,y);
+    const W=PDF_W-2*M, r=pdfFindTable(g,x0,y,[80,360,W-80-360-140-140,140,140],restFinds,ms);
+    if(r.rest.length===restFinds.length) break;   /* 1件も入らない（とても長い指摘）ときは打ち切る */
+    restFinds=r.rest; }
   return pages;
 }
 
@@ -1110,7 +1167,7 @@ async function pdfPhotoPages(){
     const g=pages[pages.length-1].getContext("2d"), n=k%(cols*rowsN), x=M+(n%cols)*cw, y=M+60+Math.floor(n/cols)*chh;
     const {f,u}=items[k], im=await loadImg(u), m=ms[f.mi]||{};
     const bw=cw-30, bh=chh-130, s=Math.min(bw/im.naturalWidth,bh/im.naturalHeight), iw=im.naturalWidth*s, ih=im.naturalHeight*s;
-    g.drawImage(im,x+(bw-iw)/2,y+(bh-ih)/2,iw,ih); g.strokeStyle="#999"; g.strokeRect(x,y,bw,bh);
+    g.drawImage(im,x+(bw-iw)/2,y+(bh-ih)/2,iw,ih); g.strokeStyle="#999"; g.lineWidth=1; g.strokeRect(x,y,bw,bh);
     pdfWrap(g,"No."+f.no+"　"+(m.sym||"")+" "+(m.loc||"")+"　"+(f.item||"").replace("/"," ")+"\n"+f.text,bw,20).slice(0,4).forEach((l,j)=>pdfText(g,l,x,y+bh+20+j*26,{size:20}));
   }
   return pages;
@@ -1198,6 +1255,7 @@ async function exportPdf(btn){
     const rep=await pdfReportPages(), ph=await pdfPhotoPages();
     rep.forEach((c,k)=>c.inkKey="r"+k); ph.forEach((c,k)=>c.inkKey="p"+k);
     const pages=[...rep, ...ph, ...await pdfSectPages()];
+    pdfDecorate(pages);
     const i=insp();
     await openInk(pages, "配筋検査帳票_"+i.title.replace(/\s+/g,"")+"_"+(D().head.date||"").replace(/-/g,"")+".pdf");
   }catch(e){ console.error(e); toast("PDFを作成できませんでした："+(e&&e.message||e)); }
