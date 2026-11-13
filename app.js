@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.11.13-5";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.11.13-6";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -205,14 +205,16 @@ const $ = s=>document.querySelector(s);
 const esc = s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function today(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
 function md(s){if(!s)return"";const p=s.split("-");return +p[1]+"/"+ +p[2]}
-function toast(t){const e=document.createElement("div");e.className="toast";e.textContent=t;document.body.appendChild(e);setTimeout(()=>e.remove(),1600)}
+/* お知らせは、ふわっと出て、消えるときも薄くなってから消える */
+function toastHide(e){ if(!e.isConnected) return; if(reduceMotion()){ e.remove(); return; } e.classList.add("out"); setTimeout(()=>e.remove(),220); }
+function toast(t){const e=document.createElement("div");e.className="toast";e.textContent=t;document.body.appendChild(e);setTimeout(()=>toastHide(e),1600)}
 /* ボタン付きのお知らせ（「元に戻す」など）。ms 秒たつか押すと消える */
 function toastAct(t,label,fn,ms=5000){
   document.querySelectorAll(".toast.act").forEach(x=>x.remove());
   const e=document.createElement("div"); e.className="toast act"; e.setAttribute("role","status");
   const s=document.createElement("span"); s.textContent=t; e.appendChild(s);
   if(label){ const b=document.createElement("button"); b.type="button"; b.textContent=label; b.addEventListener("click",()=>{ e.remove(); fn(); }); e.appendChild(b); }
-  document.body.appendChild(e); setTimeout(()=>e.remove(),ms);
+  document.body.appendChild(e); setTimeout(()=>toastHide(e),ms);
 }
 
 function memberStat(mi){
@@ -254,11 +256,23 @@ function viewWelcome(){
     <a class="btn" href="manual/" style="display:block;text-align:center;text-decoration:none;margin-top:14px">操作マニュアル</a>
   </section>`;
 }
+/* 画面ごとのスクロール位置：タブを替えたり部材カードから一覧に戻ったりしたときは、前に見ていた位置に戻す（iPhone の標準アプリと同じ）。
+   同じ画面の作り直しでは位置を動かさない。一覧から部材カードを開いたときはカードの上から。UI.keepScroll があればその位置 */
+const viewKey=()=>S.cur+"/"+UI.tab+(UI.tab==="list"&&UI.card!=null?"/card":"");
+UI.scrollMem={};
 function render(){
+  if(NAV) navEnd();
   document.getElementById("app").classList.toggle("nodata", !DATA);
   if(!DATA){ $("#view").innerHTML=viewWelcome(); return; }
   renderTop();
-  const v=$("#view");
+  const v=$("#view"), key=viewKey()+(UI.card!=null&&UI.tab==="list"?UI.card:""), old=UI.viewKey, y0=UI.leaveY??window.scrollY;
+  let y;
+  if(UI.keepScroll!=null) y=UI.keepScroll;
+  else if(old===key) y=y0;
+  else if(/\/card\d+$/.test(key) && old && old.startsWith(S.cur+"/list")) y=0;
+  else y=UI.scrollMem[key]||0;
+  if(old && old!==key) UI.scrollMem[old]=y0;
+  UI.viewKey=key; UI.keepScroll=null; UI.leaveY=null;
   if(UI.tab==="list") v.innerHTML = UI.card==null ? viewList() : viewCard(UI.card);
   else if(UI.tab==="plan") v.innerHTML = viewPlan();
   else if(UI.tab==="finds") v.innerHTML = viewFinds();
@@ -267,8 +281,97 @@ function render(){
   if(UI.tab==="finds") hydrateThumbs();
   if(UI.tab==="plan"){ usePlanImg(); attachPlanGestures(); }
   initSectPanel();
-  window.scrollTo(0, UI.keepScroll||0); UI.keepScroll=0;
+  window.scrollTo(0, y);
+  if(UI.seen!=null){   /* 部材カードから戻ったとき：その部材のタイルが画面の外なら見える所へ */
+    const t=document.getElementById("tile-"+UI.seen); UI.seen=null;
+    if(t){ const r=t.getBoundingClientRect(), hb=document.querySelector("header.top").getBoundingClientRect().bottom; if(r.top<hb || r.bottom>innerHeight-90) t.scrollIntoView({block:"center"}); }
+  }
 }
+/* ===== 画面の切り替えの動き（iPhone の標準アプリと同じ） =====
+   push（部材カードを開く）：カードが右から重なって入り、一覧は少し左へ下がる。pop（一覧に戻る）：カードが右へ抜け、一覧が戻ってくる。
+   前の画面の中身は、見えていた位置のまま固定した層（navghost）に移して動かす。新しい画面はふつうに作ってから動かす */
+let NAV=null;
+const NAV_MS=400, NAV_EASE="cubic-bezier(.32,.72,0,1)";
+const reduceMotion=()=>matchMedia("(prefers-reduced-motion: reduce)").matches;
+function navEnd(){ if(NAV){ const n=NAV; NAV=null; n(); } }
+function navBegin(dir){
+  UI.leaveY=window.scrollY;   /* 中身を移すとページが短くなって位置が変わるので、先に覚えておく */
+  const v=$("#view"), r=v.getBoundingClientRect(), cs=getComputedStyle(v);
+  const ghost=document.createElement("div"); ghost.className="navghost"; ghost.setAttribute("aria-hidden","true");
+  const inner=document.createElement("div");
+  Object.assign(inner.style,{position:"absolute", left:r.left+"px", top:r.top+"px", width:r.width+"px", boxSizing:"border-box", padding:cs.padding, display:"grid", rowGap:cs.rowGap, alignContent:"start"});
+  while(v.firstChild) inner.appendChild(v.firstChild);
+  ghost.appendChild(inner); document.body.appendChild(ghost);
+  return {dir, W:innerWidth, ghost, kids:[], cover:null, raised:[]};
+}
+/* 新しい画面を作った後：重なり順を決める（push は新しい画面を上に、背景の板 navcover も一緒に動かす） */
+function navAfter(st){
+  const v=$("#view"); st.kids=[...v.children]; v.style.overflowX="clip";
+  if(st.dir>0){
+    st.cover=document.createElement("div"); st.cover.className="navcover"; document.body.appendChild(st.cover);
+    st.kids.forEach(k=>{ if(getComputedStyle(k).position==="static"){ k.style.position="relative"; k.style.zIndex="16"; st.raised.push(k); } });
+  } else st.ghost.classList.add("top");
+  navPlace(st,0);
+}
+/* p：動きの進み具合（0＝前の画面、1＝新しい画面） */
+function navEls(st){
+  const W=st.W, out=[];
+  if(st.dir>0){ out.push([st.ghost, p=>-0.3*W*p]); [...st.kids, st.cover].forEach(el=>out.push([el, p=>W*(1-p)])); }
+  else { out.push([st.ghost, p=>W*p]); st.kids.forEach(el=>out.push([el, p=>-0.3*W*(1-p)])); }
+  return out;
+}
+function navPlace(st,p){ navEls(st).forEach(([el,f])=>el.style.transform=`translateX(${f(p)}px)`); }
+function navAnim(st,p0,p1,ms,done){
+  const opt={duration:ms, easing:NAV_EASE, fill:"forwards"};
+  const ans=navEls(st).map(([el,f])=>el.animate([{transform:`translateX(${f(p0)}px)`},{transform:`translateX(${f(p1)}px)`}],opt));
+  let fired=false; const fin=()=>{ if(fired) return; fired=true; navPlace(st,p1); ans.forEach(a=>a.cancel()); done(); };
+  if(ans[0]) ans[0].onfinish=fin; setTimeout(fin, ms+80);
+}
+function navFinish(st){
+  st.ghost.remove(); if(st.cover) st.cover.remove();
+  st.kids.forEach(k=>k.style.transform=""); st.raised.forEach(k=>{ k.style.position=""; k.style.zIndex=""; });
+  $("#view").style.overflowX="";
+}
+/* change（状態を変えて render する）を、dir の向きの動きで行う */
+function navGo(dir, change){
+  navEnd();
+  if(reduceMotion() || !document.body.animate || UI.tab!=="list"){ change(); return; }
+  const st=navBegin(dir); change(); navAfter(st);
+  NAV=()=>navFinish(st);
+  navAnim(st,0,1,NAV_MS,navEnd);
+}
+const openCard=mi=>navGo(1, ()=>{ UI.card=mi; UI.flash=null; render(); });
+const closeCard=()=>navGo(-1, ()=>{ UI.seen=UI.card; UI.card=null; render(); });
+/* ホーム画面に追加して使っているときは、画面の左端から右へ払うと一覧に戻る（iPhone と同じ）。
+   Safari で開いているときは Safari 自身の「戻る」操作と重なるので使わない */
+let EB=null;
+document.addEventListener("touchstart", e=>{
+  EB=null;
+  if(UI.tab!=="list" || UI.card==null || e.touches.length!==1 || $("#overlay").firstChild || NAV || CS || reduceMotion() || !isStandalone()) return;
+  const t=e.touches[0]; if(t.clientX>24) return;
+  EB={x:t.clientX, y:t.clientY, t:Date.now(), on:false, dx:0};
+},{passive:true});
+document.addEventListener("touchmove", e=>{
+  if(!EB) return; const t=e.touches[0], dx=t.clientX-EB.x, dy=t.clientY-EB.y;
+  if(!EB.on){
+    if(e.touches.length!==1 || (Math.abs(dy)>10 && Math.abs(dy)>=Math.abs(dx))){ EB=null; return; }
+    if(dx<10) return;
+    EB.on=true; EB.x=t.clientX; EB.card=UI.card; EB.cardY=window.scrollY;
+    EB.st=navBegin(-1); UI.card=null; render(); navAfter(EB.st);
+  }
+  e.preventDefault(); EB.dx=Math.max(0,t.clientX-EB.x); navPlace(EB.st, EB.dx/EB.st.W);
+},{passive:false});
+function edgeBackEnd(cancel){
+  if(!EB || !EB.on){ EB=null; return; }
+  const b=EB, st=b.st, p=b.dx/st.W, speed=b.dx/Math.max(Date.now()-b.t,1); EB=null;
+  const go=!cancel && (p>0.35 || (speed>0.45 && b.dx>30)), to=go?1:0;
+  navAnim(st, p, to, Math.max(200, NAV_MS*Math.abs(to-p)), ()=>{
+    if(go){ navFinish(st); const tile=document.getElementById("tile-"+b.card); if(tile) tile.classList.add("seen"); }
+    else { UI.card=b.card; UI.keepScroll=b.cardY; render(); navFinish(st); }   /* やめたとき：カードを元の位置で作り直してから重ねていた層を外す */
+  });
+}
+document.addEventListener("touchend", ()=>edgeBackEnd(false));
+document.addEventListener("touchcancel", ()=>edgeBackEnd(true));
 /* 部材一覧：状態（未着手・途中・指摘あり・完了）でしぼり込み、符号・位置で探せる */
 const LIST_FILTERS=[["all","すべて",""],["none","未着手","var(--line)"],["part","途中","var(--part)"],["ng","指摘あり","var(--ng)"],["done","完了","var(--ok)"]];
 const normQ=x=>String(x||"").normalize("NFKC").toUpperCase().replace(/\s+/g,"");
@@ -279,7 +382,7 @@ function listBody(){
     const all=ms.map((m,i)=>m.t===t&&isTarget(i)?i:-1).filter(i=>i>=0), idx=all.filter(hit); if(!idx.length) return "";
     const done=all.filter(i=>["done","ng"].includes(memberStat(i).s)).length;
     return `<section class="sec"><h2><span>${SPEC[t].label}</span><span class="num">${done} / ${all.length}</span></h2><div class="grid">${
-      idx.map(i=>{const m=ms[i],st=memberStat(i);return `<button class="mbtn${UI.flash===i?" flash":""}" id="tile-${i}" data-act="open" data-i="${i}" data-s="${st.s}"><span class="st"></span><span class="sym">${esc(m.sym)}</span><span class="loc">${esc(m.loc)}</span></button>`}).join("")}</div></section>`;
+      idx.map(i=>{const m=ms[i],st=memberStat(i);return `<button class="mbtn${UI.flash===i?" flash":""}${UI.seen===i?" seen":""}" id="tile-${i}" data-act="open" data-i="${i}" data-s="${st.s}"><span class="st"></span><span class="sym">${esc(m.sym)}</span><span class="loc">${esc(m.loc)}</span></button>`}).join("")}</div></section>`;
   };
   const body=typesHere().map(sec).join("");
   if(!ms.some((_,i)=>isTarget(i))) return `<div class="empty">検査対象がまだありません。<br>図面タブの「検査対象を選ぶ」で、検査する部材をタップして選んでください。</div>`;
@@ -411,7 +514,7 @@ function viewCard(mi){
 /* ✓・×・－を押したときは、カードを作り直さずに、各行の色・ボタンと件数・上の進み具合だけを書き換える
    （作り直すと断面リストの図も読み込み直しになり、一瞬白くなって引っかかるため）。カードが出ていなければ作り直す */
 function refreshCard(mi){
-  const rows=document.querySelectorAll(".groups .row"), n=$("#card-n");
+  const rows=document.querySelectorAll("#view .groups .row"), n=$("#card-n");
   if(UI.tab!=="list" || UI.card!==mi || !rows.length || !n){ UI.keepScroll=window.scrollY; render(); return; }
   const d=D();
   rows.forEach(r=>{ const b=r.querySelectorAll("button[data-key]"); if(!b.length) return;
@@ -811,7 +914,7 @@ function sectPanel(m, mi){
 let SV=null, SPV=null, SP_IMG=null;   /* SP_IMG：部材カードの窓に出している断面リストの図（前・次で同じページなら使い回す） */
 /* 部材カード内の表示欄。✓を押して画面を描き直しても、同じ部材なら倍率と位置を保つ */
 function initSectPanel(){
-  SPV=null; const box=document.querySelector(".sp-box"); if(!box) return;
+  SPV=null; const box=document.querySelector("#view .sp-box"); if(!box) return;
   const m=insp().members[+box.dataset.i], r=sectFor(m); if(!r) return;
   SPV=sectView(box, r, LIST_PAGES[r[0]], (z,sl,st)=>{ UI.spState={uid:m.uid,z,sl,st}; }, {reset:()=>SPV.fit(true), img:SP_IMG});
   SP_IMG=SPV.img;
@@ -841,7 +944,43 @@ function openSectViewer(m){
     <div class="sv-hint">2本指で断面リストだけを拡大・縮小できます。指でずらすと隣の部材も見られます。</div></div>`;
   SV=sectView($("#svbox"), r, pg, null, {reset:()=>SV.fit()}); SV.fit();
 }
-function closeSheet(){ $("#overlay").innerHTML=""; UI.delArm=false; }
+/* 下から出る画面を閉じる：下へ滑って消える。中身はすぐ別の層に移すので、続けて別の画面を開いても邪魔しない */
+function closeSheet(){
+  const ov=$("#overlay"), sh=ov.querySelector(".sheet"); UI.delArm=false;
+  if(!sh || reduceMotion() || !sh.animate){ ov.innerHTML=""; return; }
+  const dist=Math.max(60, innerHeight-sh.getBoundingClientRect().top), from=sh.style.transform||"translateY(0px)", scrim=sh.closest(".scrim");
+  const box=document.createElement("div"); box.style.pointerEvents="none"; box.setAttribute("aria-hidden","true");
+  while(ov.firstChild) box.appendChild(ov.firstChild); document.body.appendChild(box);
+  const ms=260, a=sh.animate([{transform:from},{transform:`translateY(${dist}px)`}],{duration:ms, easing:"cubic-bezier(.32,.72,0,1)", fill:"forwards"});
+  if(scrim) scrim.animate([{opacity:getComputedStyle(scrim).opacity},{opacity:0}],{duration:ms, fill:"forwards"});
+  let done=false; const end=()=>{ if(done) return; done=true; box.remove(); }; a.onfinish=end; setTimeout(end, ms+100);
+}
+/* 下から出る画面を指で下へ引くと閉じる（いちばん上までスクロールしているとき。文字の入力欄の上からは使わない）。
+   閉じたときは背景をタップしたのと同じ（指摘の入力なら取り消し） */
+let SD=null;
+document.addEventListener("touchstart", e=>{
+  SD=null; const sh=e.target.closest && e.target.closest("#overlay .sheet");
+  if(!sh || e.touches.length!==1 || sh.scrollTop>0 || e.target.closest("input,textarea,select") || reduceMotion()) return;
+  SD={sh, y:e.touches[0].clientY, x:e.touches[0].clientX, t:Date.now(), on:false, dy:0};
+},{passive:true});
+document.addEventListener("touchmove", e=>{
+  if(!SD) return; const t=e.touches[0], dy=t.clientY-SD.y, dx=t.clientX-SD.x;
+  if(!SD.on){ if(dy<8 || Math.abs(dx)>dy || SD.sh.scrollTop>0){ if(dy<-8 || Math.abs(dx)>12) SD=null; return; } SD.on=true; SD.y=t.clientY; }
+  e.preventDefault(); SD.dy=Math.max(0,t.clientY-SD.y);
+  SD.sh.style.transform=`translateY(${SD.dy}px)`;
+  const sc=SD.sh.closest(".scrim"); if(sc) sc.style.opacity=String(Math.max(0.3, 1-SD.dy/(SD.sh.offsetHeight||400)));
+},{passive:false});
+function sheetDragEnd(){
+  if(!SD || !SD.on){ SD=null; return; }
+  const {sh, dy}=SD, speed=dy/Math.max(Date.now()-SD.t,1); SD=null;
+  if(!sh.isConnected) return;
+  if(dy>Math.min(140, sh.offsetHeight*0.3) || (speed>0.5 && dy>40)){ cancelDraft(); return; }
+  const sc=sh.closest(".scrim");
+  const a=sh.animate([{transform:sh.style.transform},{transform:"translateY(0px)"}],{duration:280, easing:"cubic-bezier(.32,.72,0,1)"});
+  sh.style.transform=""; if(sc){ sc.animate([{opacity:sc.style.opacity||1},{opacity:1}],{duration:280}); sc.style.opacity=""; }
+}
+document.addEventListener("touchend", sheetDragEnd);
+document.addEventListener("touchcancel", sheetDragEnd);
 function newDraft(mi,item){
   const d=D();
   return {id:"f"+Date.now(), no:d.seq+1, mi, item, text:"", photos:[], pin:null, status:"open", isNew:true, prev:item?d.res[mi+"|"+item]:undefined};
@@ -860,7 +999,7 @@ document.addEventListener("click", async e=>{
   const el=e.target.closest("[data-act]"); if(!el) return;
   const a=el.dataset.act, d=D(), ms=insp().members;
   if(a==="sheetbg"){ if(e.target===el){ cancelDraft(); } return; }
-  if(a==="open"){ UI.card=+el.dataset.i; UI.flash=null; render(); return; }
+  if(a==="open"){ openCard(+el.dataset.i); return; }
   if(a==="lf"){ UI.lf=el.dataset.f; render(); return; }
   if(a==="fscope"){ UI.fall=el.dataset.v==="all"; render(); return; }
   if(a==="openinsp"){ S.cur=el.dataset.id; UI.card=null; UI.pick=null; UI.flash=null; UI.focus=null; UI.fall=false; UI.tab="finds"; save(); render(); window.scrollTo(0,0); return; }
@@ -884,7 +1023,7 @@ document.addEventListener("click", async e=>{
     toast(ms[mi].sym+"　"+ms[mi].loc); return; }
   if(a==="where"){ const mi=+el.dataset.i; UI.focus=mi; UI.tab="plan"; UI.planPos=null; UI.zoom=Math.max(UI.zoom,1.75); render();
     const h=document.querySelector(`.hs[data-i="${mi}"]`); h&&h.scrollIntoView({block:"center",inline:"center"}); return; }
-  if(a==="close"){ UI.card=null; render(); return; }
+  if(a==="close"){ closeCard(); return; }
   if(a==="prev"||a==="next"){ const j=stepTarget(UI.card, a==="next"?1:-1); if(j!=null){ UI.card=j; render(); } return; }
   if(a==="set"){
     const k=el.dataset.key, v=el.dataset.k, key=UI.card+"|"+k;
@@ -971,10 +1110,8 @@ document.addEventListener("click", e=>{
 document.getElementById("tabs").addEventListener("click", e=>{
   const b=e.target.closest("button[data-tab]"); if(!b) return;
   if(UI.pick) abandonPick();
-  if(b.dataset.tab==="list" && UI.tab==="list") UI.card=null;
-  if(UI.tab==="plan") UI.planY=window.scrollY;   /* 図面タブの画面の縦位置も覚えておく */
-  UI.tab=b.dataset.tab;
-  if(UI.tab==="plan" && UI.planPos && UI.planPos.cur===S.cur) UI.keepScroll=UI.planY||0;
+  if(b.dataset.tab==="list" && UI.tab==="list"){ if(UI.card!=null) closeCard(); return; }   /* 部材カードを開いているときは一覧に戻る */
+  UI.tab=b.dataset.tab;   /* スクロール位置は render がタブごとに覚えて戻す */
   if(UI.tab==="dwg" && !DWG){ ensureDrawings().then(render); return; }
   render();
 });
