@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.11.13-2";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.11.13-3";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -311,7 +311,7 @@ function viewCard(mi){
   }).join("");
   return `<button class="back" data-act="close">‹ 部材一覧</button>
   <div class="card-head"><div class="ch-l"><div class="kind">${sp.label}　${ms.slice(0,mi+1).filter((x,j)=>x.t===m.t&&isTarget(j)).length} / ${ms.filter((x,j)=>x.t===m.t&&isTarget(j)).length}</div><div class="sym">${esc(m.sym)}</div><div class="loc">${esc(m.loc)}</div></div>
-  <div class="ch-r"><span class="num" style="font-size:20px">${st.n}<span style="color:var(--muted)"> / ${st.total}</span></span><button class="refbtn" data-act="refs">基準値メモ</button></div></div>
+  <div class="ch-r"><span class="num" id="card-n" style="font-size:20px">${st.n}<span style="color:var(--muted)"> / ${st.total}</span></span><button class="refbtn" data-act="refs">基準値メモ</button></div></div>
   <div class="cardbody">
   ${sectFor(m)?sectPanel(m,mi):""}
   <dl class="design">${design}</dl>
@@ -320,6 +320,17 @@ function viewCard(mi){
   </div>
   <div style="height:56px"></div>
   <div class="card-foot"><button class="btn" data-act="prev" ${stepTarget(mi,-1)==null?"disabled":""}>‹ 前</button><button class="btn primary" data-act="allok">残りを全て ✓</button><button class="btn" data-act="next" ${stepTarget(mi,1)==null?"disabled":""}>次 ›</button></div>`;
+}
+/* ✓・×・－を押したときは、カードを作り直さずに、各行の色・ボタンと件数・上の進み具合だけを書き換える
+   （作り直すと断面リストの図も読み込み直しになり、一瞬白くなって引っかかるため）。カードが出ていなければ作り直す */
+function refreshCard(mi){
+  const rows=document.querySelectorAll(".groups .row"), n=$("#card-n");
+  if(UI.tab!=="list" || UI.card!==mi || !rows.length || !n){ UI.keepScroll=window.scrollY; render(); return; }
+  const d=D();
+  rows.forEach(r=>{ const b=r.querySelectorAll("button[data-key]"); if(!b.length) return;
+    const v=d.res[mi+"|"+b[0].dataset.key]||""; r.dataset.v=v; b.forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.k===v))); });
+  const st=memberStat(mi); n.firstChild.textContent=st.n;
+  renderTop();
 }
 function viewPlan(){
   const d=D(), i=insp();
@@ -659,8 +670,10 @@ function sectFor(m){ const d=(insp().sect&&insp().sect[m.t])||SECT[m.t]; return 
 /* opts.onSwipe(dir)：ページ全体が見えているときの左右スワイプ（dir：1＝次、-1＝前）。opts.reset：2回タップで戻す表示 */
 function sectView(box, r, pg, onChange, opts={}){
   box.innerHTML=`<div class="sv-wrap"><img alt="${esc(pg.title)}"><span class="frame"></span></div>`;
-  const wrap=box.firstChild, img=wrap.querySelector("img"), fr=wrap.querySelector(".frame"); img.decoding="async"; img.src=pg.img;
-  const v={z:1}, rw=r[3]-r[1], rh=r[4]-r[2];
+  const wrap=box.firstChild, fr=wrap.querySelector(".frame"); let img=wrap.querySelector("img");
+  if(opts.img && opts.img._pg===pg){ img.replaceWith(opts.img); img=opts.img; }   /* 読み込み済みの図を使い回す（部材カードの窓） */
+  else { img.decoding="async"; img.src=pg.img; img._pg=pg; }
+  const v={z:1, img}, rw=r[3]-r[1], rh=r[4]-r[2];
   const save=()=>{ if(onChange) onChange(v.z, box.scrollLeft, box.scrollTop); };
   v.apply=z=>{
     const zmin=Math.min(box.clientWidth/pg.w, box.clientHeight/pg.h)*0.98; v.zmin=zmin;
@@ -699,12 +712,13 @@ function sectPanel(m, mi){
   return `<div class="sectpanel"><div class="sp-box" data-i="${mi}"></div><span class="sp-cap">${esc(pg.title.split(" ")[1]||pg.title)}</span>
     <div class="sp-ctl"><button data-act="spfit" aria-label="部材の表示に戻す">↺</button><button data-act="sect" data-i="${mi}" aria-label="全画面で表示">⤢</button></div></div>`;
 }
-let SV=null, SPV=null;
+let SV=null, SPV=null, SP_IMG=null;   /* SP_IMG：部材カードの窓に出している断面リストの図（前・次で同じページなら使い回す） */
 /* 部材カード内の表示欄。✓を押して画面を描き直しても、同じ部材なら倍率と位置を保つ */
 function initSectPanel(){
   SPV=null; const box=document.querySelector(".sp-box"); if(!box) return;
   const m=insp().members[+box.dataset.i], r=sectFor(m); if(!r) return;
-  SPV=sectView(box, r, LIST_PAGES[r[0]], (z,sl,st)=>{ UI.spState={uid:m.uid,z,sl,st}; }, {reset:()=>SPV.fit(true)});
+  SPV=sectView(box, r, LIST_PAGES[r[0]], (z,sl,st)=>{ UI.spState={uid:m.uid,z,sl,st}; }, {reset:()=>SPV.fit(true), img:SP_IMG});
+  SP_IMG=SPV.img;
   const s=UI.spState; if(s && s.uid===m.uid) SPV.restore(s.z,s.sl,s.st); else SPV.fit(true);
 }
 /* 参考図（梁貫通補強検討書など）：部材ごとのページの一覧（符号ごと → 種別ごとの順に探す） */
@@ -781,7 +795,7 @@ document.addEventListener("click", async e=>{
     if(v==="ng"){ const ex=d.finds.find(f=>f.mi===UI.card&&f.item===k); if(ex){ openFindSheet(Object.assign({},ex,{photos:[...ex.photos]})); } else { openFindSheet(newDraft(UI.card,k)); } d.res[key]="ng"; }
     else { d.res[key]= d.res[key]===v? undefined : v; if(!d.res[key]) delete d.res[key]; }
     if(d.res[key]) markFirst(UI.card);
-    save(); UI.keepScroll=window.scrollY; render(); return;
+    save(); refreshCard(UI.card); return;
   }
   if(a==="allok"){ const mi=UI.card, cur=S.cur, u=ms[mi].uid, hadFirst=!!(d.firstAt&&d.firstAt[u]), set=[];
     itemKeys(ms[mi].t).forEach(k=>{const key=mi+"|"+k; if(!d.res[key]){ d.res[key]="ok"; set.push(key); }}); markFirst(mi); save();
@@ -790,8 +804,8 @@ document.addEventListener("click", async e=>{
     toastAct(ms[mi].sym+"　"+(s.s==="ng"?"指摘あり":"完了"), set.length?"元に戻す":"", ()=>{
       set.forEach(k=>{ if(d.res[k]==="ok") delete d.res[k]; });   /* その後に自分で変えた項目は残す */
       if(!hadFirst && d.firstAt && !itemKeys(ms[mi].t).some(k=>d.res[mi+"|"+k])) delete d.firstAt[u]; save();
-      if(S.cur===cur && UI.tab==="list" && UI.card===mi) UI.keepScroll=window.scrollY; render(); toast("元に戻しました"); });
-    UI.keepScroll=window.scrollY; render(); return; }   /* 次の部材へは進まず、同じ部材のまま（位置もそのまま） */
+      if(S.cur===cur && UI.tab==="list" && UI.card===mi) refreshCard(mi); else render(); toast("元に戻しました"); });
+    refreshCard(mi); return; }   /* 次の部材へは進まず、同じ部材のまま（位置もそのまま） */
   if(a==="addfind"){ openFindSheet(newDraft(UI.card,null)); return; }
   if(a==="sect"){ openSectViewer(insp().members[+el.dataset.i]); return; }
   if(a==="svclose"){ $("#overlay").innerHTML=""; SV=null; return; }
