@@ -118,8 +118,8 @@ nav.tabs button[aria-current="true"] svg{stroke-width:2}
 .cardbtns{display:flex;gap:8px;flex-wrap:wrap}
 .sp-box{position:absolute;inset:0;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y}
 .sp-cap{position:absolute;left:6px;top:6px;max-width:calc(100% - 12px);background:rgba(0,0,0,.55);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);color:#fff;font-size:10.5px;font-weight:500;line-height:15px;padding:2px 7px;border-radius:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
-.sp-ctl{position:absolute;right:6px;bottom:6px;display:flex;gap:5px}
-.sp-ctl button{width:32px;height:32px;border-radius:9px;border:0;background:rgba(255,255,255,.86);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);color:#1c1c1e;font-weight:600;font-size:15px;padding:0;display:grid;place-items:center;box-shadow:0 1px 4px rgba(0,0,0,.18)}
+.sp-ctl{position:absolute;right:6px;bottom:6px;display:flex;gap:8px}
+.sp-ctl button{width:42px;height:42px;border-radius:9px;border:0;background:rgba(255,255,255,.86);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);color:#1c1c1e;font-weight:600;font-size:15px;padding:0;display:grid;place-items:center;box-shadow:0 1px 4px rgba(0,0,0,.18)}
 .sv-wrap img{position:absolute;left:0;top:0;max-width:none;user-select:none;-webkit-user-drag:none}
 .sv-wrap .frame{position:absolute;border:3px solid #f2a100;border-radius:3px;box-shadow:0 0 0 2000px rgba(255,255,255,.18);pointer-events:none}
 /* 全画面ビューアー */
@@ -166,8 +166,8 @@ nav.tabs button[aria-current="true"] svg{stroke-width:2}
 .row[data-v="ng"]{background:var(--ng-soft)}
 .row[data-v="na"]{background:var(--na-soft)}
 .row .fno{font-size:11px;color:var(--ng);font-weight:700;margin-left:6px}
-.seg{display:flex;gap:2px;background:var(--fill);border-radius:10px;padding:2px}
-.seg button{width:50px;height:40px;border-radius:8px;border:0;background:transparent;font-size:19px;font-weight:600;color:var(--muted);display:grid;place-items:center;transition:background-color .15s ease,color .15s ease,transform .12s ease}
+.seg{display:flex;gap:6px;background:var(--fill);border-radius:11px;padding:3px}   /* 手袋でも押し間違えないよう、高さ48px・間6px */
+.seg button{width:50px;height:48px;border-radius:8px;border:0;background:transparent;font-size:19px;font-weight:600;color:var(--muted);display:grid;place-items:center;transition:background-color .15s ease,color .15s ease,transform .12s ease}
 .seg button:active{transform:scale(.88)}
 .chips button:active,.seg2 button:active{transform:scale(.95)}.back:active,.refbtn:active,.figlink:active{opacity:.5}
 .seg button[aria-pressed="true"]{box-shadow:0 1px 3px rgba(0,0,0,.16)}
@@ -180,8 +180,8 @@ nav.tabs button[aria-current="true"] svg{stroke-width:2}
 .btn.primary,.sheet .btn.primary{background:var(--accent);color:var(--accent-ink)}
 .btn.danger{color:var(--ng)}
 .btn:disabled{opacity:.4}
-.back{background:none;border:0;color:var(--accent);font-weight:500;font-size:16px;padding:4px 0;justify-self:start}
-.refbtn{background:var(--fill);border:0;border-radius:14px;padding:4px 11px;font-size:12px;font-weight:500;color:var(--accent)}
+.back{background:none;border:0;color:var(--accent);font-weight:500;font-size:16px;padding:10px 12px 10px 0;margin:-6px 0;justify-self:start}
+.refbtn{background:var(--fill);border:0;border-radius:18px;padding:0 14px;min-height:36px;font-size:13px;font-weight:500;color:var(--accent)}
 
 /* bottom sheet */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.32);z-index:50;display:flex;align-items:flex-end;justify-content:center}
@@ -197,8 +197,9 @@ textarea{width:100%;box-sizing:border-box;min-height:84px;border:0;border-radius
 .thumbs{display:flex;gap:8px;flex-wrap:wrap}
 .thumbs figure{margin:0;position:relative}
 .thumbs img{width:84px;height:84px;object-fit:cover;border-radius:12px;border:0;display:block}
-.thumbs button{position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;border:0;background:var(--ink);color:var(--surface);font-size:14px;line-height:1}
-.thumbs button.ed{top:auto;bottom:-6px;background:var(--accent);color:#fff;font-size:13px}
+.thumbs{gap:12px}
+.thumbs button{position:absolute;top:-8px;right:-8px;width:34px;height:34px;border-radius:50%;border:2px solid var(--surface);background:var(--ink);color:var(--surface);font-size:16px;line-height:1}
+.thumbs button.ed{top:auto;bottom:-8px;background:var(--accent);color:#fff;font-size:15px}
 .thumbs img[data-act]{cursor:pointer}
 .filebtn{position:relative;overflow:hidden}
 .filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}

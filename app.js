@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.11.13-6";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.11.16-1";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -198,6 +198,25 @@ async function loadState(){
 }
 const photoCache = new Map();
 async function photo(id){ if(photoCache.has(id)) return photoCache.get(id); const v=safeImg(await dbGet("photos",id)); if(v) photoCache.set(id,v); return v; }
+/* 使われなくなった写真を端末から消す（取り消した指摘・削除した指摘・書き込み前の写真など。たまると端末の容量を圧迫するため）。
+   ids のうち、どの検査の指摘にも、入力中の指摘にも使われていないものだけを消す */
+function photoRefs(){ const s=new Set(); Object.values(S.data||{}).forEach(d=>(d.finds||[]).forEach(f=>f.photos.forEach(p=>s.add(p))));
+  if(UI.draft) UI.draft.photos.forEach(p=>s.add(p)); return s; }
+function dropPhotos(ids){ const used=photoRefs(); for(const id of new Set(ids)) if(id && !used.has(id)){ photoCache.delete(id); dbDel("photos",id); } }
+/* 起動したとき：以前の版でたまった、どの工事の記録にも使われていない写真を消す（写真の置き場はすべての工事で共通なので、全工事の記録を見る） */
+async function sweepPhotos(){
+  if(!idb) return;
+  try{
+    const all=await new Promise((res,rej)=>{ const tx=idb.transaction("kv"), st=tx.objectStore("kv");
+      const a=st.getAllKeys(), b=st.getAll(); tx.oncomplete=()=>res({keys:a.result, vals:b.result}); tx.onerror=tx.onabort=()=>rej(tx.error); });
+    const used=photoRefs();
+    for(const [k,i] of all.keys.map((k,i)=>[k,i])){ if(typeof k!=="string" || !k.startsWith("state:")) continue;
+      const v=all.vals[i]; if(!v || typeof v!=="object" || !v.data || typeof v.data!=="object") return;   /* 読めない記録があるときは何も消さない */
+      Object.values(v.data).forEach(d=>(Array.isArray(d&&d.finds)?d.finds:[]).forEach(f=>(Array.isArray(f&&f.photos)?f.photos:[]).forEach(p=>used.add(p)))); }
+    const ids=await new Promise((res,rej)=>{ const q=idb.transaction("photos").objectStore("photos").getAllKeys(); q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); });
+    for(const id of ids) if(!used.has(id)) dbDel("photos",id);
+  }catch(e){}
+}
 
 /* ===== UI 状態 ===== */
 let UI = {tab:"list", card:null, zoom:1.75, pick:null, draft:null, flash:null, focus:null};
@@ -719,7 +738,7 @@ function openFindSheet(draft){
   const onFiles=async e=>{ const dr=UI.draft, files=[...e.target.files]; e.target.value="";
     for(const f of files){ if(dr.photos.length>=20){ toast("写真は1件の指摘に20枚までです"); break; }
       const id="p"+Date.now()+Math.random().toString(36).slice(2,6); const url=await shrink(f); if(UI.draft!==dr) return;
-      photoCache.set(id,url); dbPut("photos",id,url); dr.photos.push(id); }
+      photoCache.set(id,url); dbPut("photos",id,url); dr.photos.push(id); (dr.tmp=dr.tmp||[]).push(id); }
     drawSheetThumbs(); };
   $("#fs-cam").onchange=onFiles; $("#fs-pick").onchange=onFiles;
   $("#fs-text").oninput=e=>{UI.draft.text=e.target.value};
@@ -732,7 +751,7 @@ async function inkPhoto(id){
   openInk([c], "", {title:"写真に書き込み", doneLabel:"完了", hint:"指かペンで書き込めます。2本指で拡大・移動。「完了」で書き込み入りの写真に差し替えます。",
     unit:p=>Math.max(p.width,p.height)/1000, onCancel:back,
     onDone:out=>{ const nid="p"+Date.now()+Math.random().toString(36).slice(2,6), v=out[0].toDataURL("image/jpeg",0.85);
-      photoCache.set(nid,v); dbPut("photos",nid,v); const k=UI.draft.photos.indexOf(id); if(k>=0) UI.draft.photos[k]=nid; else UI.draft.photos.push(nid);
+      photoCache.set(nid,v); dbPut("photos",nid,v); (UI.draft.tmp=UI.draft.tmp||[]).push(nid); const k=UI.draft.photos.indexOf(id); if(k>=0) UI.draft.photos[k]=nid; else UI.draft.photos.push(nid);
       back(); toast("写真に書き込みました"); }});
 }
 async function drawSheetThumbs(){
@@ -988,10 +1007,11 @@ function newDraft(mi,item){
 function commitDraft(){
   const d=D(), dr=UI.draft; if(!dr) return;
   const rec={id:dr.id,no:dr.no,mi:dr.mi,item:dr.item,text:dr.text.trim(),photos:dr.photos,pin:dr.pin,status:dr.status,doneDate:dr.doneDate,method:dr.method};
-  const i=d.finds.findIndex(f=>f.id===dr.id);
+  const i=d.finds.findIndex(f=>f.id===dr.id), old=i>=0? d.finds[i].photos : [];
   if(i>=0) d.finds[i]=rec; else { d.finds.push(rec); d.seq=Math.max(d.seq,dr.no); }
   if(dr.item){ d.res[dr.mi+"|"+dr.item]="ng"; if(dr.mi!=null){ const u=insp().members[dr.mi].uid; d.firstAt=d.firstAt||{}; if(!d.firstAt[u]) d.firstAt[u]=Date.now(); } }
   UI.draft=null; save();
+  dropPhotos([...old, ...(dr.tmp||[])]);   /* 外した写真・書き込み前の写真を消す */
 }
 
 /* ===== イベント ===== */
@@ -1027,6 +1047,9 @@ document.addEventListener("click", async e=>{
   if(a==="prev"||a==="next"){ const j=stepTarget(UI.card, a==="next"?1:-1); if(j!=null){ UI.card=j; render(); } return; }
   if(a==="set"){
     const k=el.dataset.key, v=el.dataset.k, key=UI.card+"|"+k;
+    /* 未是正の指摘がある項目は、✓・－にできない（帳票で指摘のある項目に✓が入らないように）。是正確認すると変えられる */
+    const open=v!=="ng" && d.finds.find(f=>f.mi===UI.card&&f.item===k&&f.status!=="done");
+    if(open){ toastAct("指摘"+open.no+"が未是正です。是正確認してから変えてください","指摘を開く",()=>openFindSheet(Object.assign({},open,{photos:[...open.photos],isNew:false})),5000); return; }
     if(v==="ng"){ const ex=d.finds.find(f=>f.mi===UI.card&&f.item===k); if(ex){ openFindSheet(Object.assign({},ex,{photos:[...ex.photos]})); } else { openFindSheet(newDraft(UI.card,k)); } d.res[key]="ng"; }
     else { d.res[key]= d.res[key]===v? undefined : v; if(!d.res[key]) delete d.res[key]; }
     if(d.res[key]) markFirst(UI.card);
@@ -1063,10 +1086,10 @@ document.addEventListener("click", async e=>{
   if(a==="rmphoto"){ UI.draft.photos=UI.draft.photos.filter(p=>p!==el.dataset.id); drawSheetThumbs(); return; }
   if(a==="fsave"){ commitDraft(); closeSheet(); render(); toast("指摘を保存しました"); return; }
   if(a==="fcancel"){ cancelDraft(); return; }
-  if(a==="fdelete"){ if(!UI.delArm){UI.delArm=true; el.textContent="本当に削除する"; return;} const dr=UI.draft; d.finds=d.finds.filter(f=>f.id!==dr.id);
+  if(a==="fdelete"){ if(!UI.delArm){UI.delArm=true; el.textContent="本当に削除する"; return;} const dr=UI.draft, gone=[...dr.photos, ...(dr.tmp||[]), ...((d.finds.find(f=>f.id===dr.id)||{}).photos||[])]; d.finds=d.finds.filter(f=>f.id!==dr.id);
     /* その項目の×はこの指摘のために付けたものなので、ほかに同じ項目の指摘がなければ外す */
     if(dr.item && dr.mi!=null && d.res[dr.mi+"|"+dr.item]==="ng" && !d.finds.some(f=>f.mi===dr.mi && f.item===dr.item)) delete d.res[dr.mi+"|"+dr.item];
-    UI.draft=null; save(); closeSheet(); render(); toast("指摘を削除しました"); return; }
+    UI.draft=null; save(); dropPhotos(gone); closeSheet(); render(); toast("指摘を削除しました"); return; }
   if(a==="pickpin"){ UI.pick={returnTab:UI.tab}; closeSheet(); UI.tab="plan"; render(); return; }
   if(a==="pickcancel"){ const back=UI.pick.returnTab; UI.pick=null; UI.tab=back; render(); openFindSheet(UI.draft); return; }
   if(a==="zoom"){ planZoomTo(UI.zoom*Math.pow(1.5,+el.dataset.z)); return; }
@@ -1086,7 +1109,8 @@ document.addEventListener("click", async e=>{
   if(a==="bksnooze"){ BK_SNOOZE=Date.now()+12*3600e3; dbPut("kv","bksnooze:"+PROJECT.id,BK_SNOOZE); render(); return; }   /* 12時間は出さない */
   if(a==="a2hsoff"){ A2HS_OFF=Date.now()+14*864e5; dbPut("kv","a2hsoff",A2HS_OFF); render(); return; }   /* 2週間は出さない */
   if(a==="restoredo"){ const b=UI.restore; UI.restore=null; for(const [rid,u] of Object.entries(b.photos||{})){ const id=safeId(rid), url=safeImg(u); if(!id||!url) continue; photoCache.set(id,url); dbPut("photos",id,url); }
-    Object.assign(S.data,fromStoreData(b.data)); save(); closeSheet(); render(); toast("バックアップを読み込みました"); return; }
+    const nd=fromStoreData(b.data), gone=Object.keys(nd).flatMap(id=>((S.data[id]||{}).finds||[]).flatMap(f=>f.photos));   /* 置き換わる検査の写真（バックアップで使われないもの）は消す */
+    Object.assign(S.data,nd); save(); dropPhotos(gone); closeSheet(); render(); toast("バックアップを読み込みました"); return; }
   if(a==="reset"){   /* 確かめる画面を出し、「本当に削除する」を押したときだけ消す */
     const nm=new Set(Object.keys(d.res).map(k=>k.split("|")[0])).size, np=d.finds.reduce((n,f)=>n+f.photos.length,0);
     $("#overlay").innerHTML=`<div class="scrim" data-act="sheetbg"><div class="sheet" role="alertdialog" aria-modal="true" aria-labelledby="rs-h"><h3 id="rs-h">この検査の記録を削除しますか？</h3>
@@ -1094,12 +1118,13 @@ document.addEventListener("click", async e=>{
       <p class="note">残しておきたい場合は、先に「バックアップを保存」してください。</p>
       <div class="two"><button class="btn" data-act="fclose">やめる</button><button class="btn danger fill" data-act="resetdo">本当に削除する</button></div></div></div>`;
     return; }
-  if(a==="resetdo"){ delete S.data[S.cur]; dbDel("kv",inkDbKey()); save(); closeSheet(); render(); toast("記録を削除しました"); return; }
+  if(a==="resetdo"){ const gone=d.finds.flatMap(f=>f.photos); delete S.data[S.cur]; dropPhotos(gone); dbDel("kv",inkDbKey()); save(); closeSheet(); render(); toast("記録を削除しました"); return; }
 });
 function cancelDraft(){
   const dr=UI.draft, d=D();
   if(dr && dr.isNew && dr.item){ if(dr.prev) d.res[dr.mi+"|"+dr.item]=dr.prev; else delete d.res[dr.mi+"|"+dr.item]; save(); }
-  UI.draft=null; closeSheet(); render();
+  UI.draft=null; if(dr) dropPhotos([...dr.photos, ...(dr.tmp||[])]);   /* 入力中に足した写真を消す（保存済みの指摘の写真は残る） */
+  closeSheet(); render();
 }
 document.addEventListener("click", e=>{
   if(!UI.pick) return; const img=e.target.closest("#planimg"); if(!img) return;
@@ -1118,7 +1143,7 @@ document.getElementById("tabs").addEventListener("click", e=>{
 /* 図面で位置を選んでいる途中に別の画面へ移ったときは、指摘の入力を取り消したのと同じに扱う（×だけが残らないように） */
 function abandonPick(){ const dr=UI.draft, d=D(); UI.pick=null;
   if(dr && dr.isNew && dr.item){ if(dr.prev) d.res[dr.mi+"|"+dr.item]=dr.prev; else delete d.res[dr.mi+"|"+dr.item]; save(); }
-  UI.draft=null; }
+  UI.draft=null; if(dr) dropPhotos([...dr.photos, ...(dr.tmp||[])]); }
 document.getElementById("insp-select").addEventListener("change", e=>{ if(UI.pick) abandonPick(); S.cur=e.target.value; UI.card=null; UI.pick=null; UI.flash=null; UI.focus=null; UI.selEdit=null; save(); render(); });
 document.addEventListener("change", e=>{ const k=e.target.dataset?.h; if(k){ D().head[k]=e.target.value; save(); renderTop(); } });
 function toCSV(){
@@ -1859,4 +1884,5 @@ try{ navigator.storage && navigator.storage.persist && navigator.storage.persist
   const ds=await dbGet("kv","dataset");
   if(ds && ds.format==="haikin-data"){ try{ applyData(ds); await loadState(); await loadBackupInfo(); }catch(e){ console.error(e); DATA=null; } }
   render();
+  if(DATA) setTimeout(sweepPhotos, 3000);   /* 使われていない写真の片付けは、画面が出てから */
 })();
