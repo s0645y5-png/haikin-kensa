@@ -1,6 +1,6 @@
 /* 配筋検査アプリ：プログラム本体（index.html から読み込む。CSP のため画面に直接書かない） */
 "use strict";
-const APP_VERSION="2026.11.16-1";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
+const APP_VERSION="2026.11.17-1";   /* アプリの版（変更して反映するたびに上げる。帳票タブの一番下に表示） */
 /* ===== データ（データファイル .json から読み込む。build.py が project_*.py から作る） ===== */
 let DATA=null, PROJECT={id:"",name:"",short:""};
 let SLAB={}, BEAM={}, COL={}, WALL={}, REFS=[], LIST_PAGES={}, SECT={}, GRID={}, INSPECTIONS=[], FIGS={};
@@ -1297,7 +1297,11 @@ function recordedIdx(t){
 }
 
 /* ---- 帳票の見た目（色・見出し・札・ページ下の表示） ---- */
-const PC={ink:"#1d1d1f", mute:"#86868b", line:"#dcdce1", rule:"#aeaeb4", edge:"#6e6e73", tint:"#f5f5f7", ngbg:"#fff1f0", ng:"#d92d20", ok:"#248a3d", okbg:"#eaf6ec", blue:"#0071e3"};
+/* 配色（2026.11.17）：色は2つだけ。落ち着いた青（acc：見出しの印・表の上下の線・✓・是正済）と、指摘の赤（ng）。
+   ほかは青みのある灰色の段階（文字 ink → 補足 mute → 線 rule → 薄い線 line）と、薄い青の塗り（tint：表の見出し、soft：まとまりの欄）。
+   塗りは薄く、文字は白地・塗りの上でも読める濃さにする */
+const PC={ink:"#1f2933", mute:"#66727f", line:"#e3e8ee", rule:"#c5cfda", edge:"#7f9ab6", tint:"#edf2f8", soft:"#f6f8fb",
+  acc:"#34679c", ng:"#c2453b", ngbg:"#fbefed", ok:"#34679c", okbg:"#edf2f8", blue:"#34679c"};
 const PDF_BOT=PDF_H-110;   /* 本文を描ける下端（その下はページ番号などの欄） */
 function pdfRR(g,x,y,w,h,r){ g.beginPath(); if(g.roundRect) g.roundRect(x,y,w,h,r); else g.rect(x,y,w,h); }
 /* 角の丸い札（文字の高さの中心が y）。o.right なら x が右端。幅を返す */
@@ -1309,14 +1313,16 @@ function pdfFit(g,s,x,y,maxW,o={}){ let size=o.size||22; const min=o.min||14; s=
   for(;size>min;size--){ g.font=(o.bold?"bold ":"")+size+"px "+PDF_FONT; if(g.measureText(s).width<=maxW) break; }
   pdfText(g,s,x,y,Object.assign({},o,{size})); }
 /* ページの見出し：小さい文字の上書き＋大きい表題。表題の下端の y を返す */
-function pdfTitle(g,sub,title,M){ pdfText(g,sub,M,M+12,{size:20,color:PC.mute}); pdfText(g,title,M,M+60,{size:50,bold:true,color:PC.ink}); return M+92; }
-function pdfSecTitle(g,s,note,x,y){
+/* 左に青の縦の印を付ける */
+function pdfTitle(g,sub,title,M){ g.fillStyle=PC.acc; pdfRR(g,M,M-4,8,90,4); g.fill();
+  pdfText(g,sub,M+26,M+12,{size:20,bold:true,color:PC.acc}); pdfText(g,title,M+26,M+60,{size:50,bold:true,color:PC.ink}); return M+92; }
+function pdfSecTitle(g,s,note,x,y){ g.fillStyle=PC.acc; pdfRR(g,x,y+4,6,27,3); g.fill(); x+=18;
   pdfText(g,s,x,y+17,{size:26,bold:true,color:PC.ink}); if(note){ g.font="bold 26px "+PDF_FONT; pdfText(g,note,x+g.measureText(s).width+14,y+19,{size:19,color:PC.mute}); } return y+46; }
 /* 指摘の表（帳票ページの右側と、入りきらなかった続きのページで共通）。描けた行の下端と、入りきらなかった指摘を返す */
 function pdfFindTable(g,x,y,cols,finds,ms){
   const W=cols.reduce((a,b)=>a+b,0), head=["No","部材・位置","指摘事項・処理方法","判定","確認日"];
   g.fillStyle=PC.tint; g.fillRect(x,y,W,40);
-  let xx=x; head.forEach((s,j)=>{ pdfText(g,s,xx+cols[j]/2,y+20,{size:17,align:"center",color:PC.mute}); xx+=cols[j]; }); y+=40;
+  let xx=x; head.forEach((s,j)=>{ pdfText(g,s,xx+cols[j]/2,y+20,{size:17,bold:true,align:"center",color:PC.acc}); xx+=cols[j]; }); y+=40;
   g.fillStyle=PC.edge; g.fillRect(x,y-2,W,2);
   const rest=[];
   for(const f of finds){
@@ -1342,10 +1348,10 @@ function pdfDecorate(pages){
   const made="作成 "+now.getFullYear()+"/"+p2(now.getMonth()+1)+"/"+p2(now.getDate())+" "+p2(now.getHours())+":"+p2(now.getMinutes());
   pages.forEach((c,k)=>{ const g=c.getContext("2d"), pg=(k+1)+" / "+n;
     if(!String(c.inkKey||"").startsWith("r")) return;
-    const M=60, y=PDF_H-50; g.fillStyle=PC.line; g.fillRect(M,y-28,PDF_W-2*M,1.5);
+    const M=60, y=PDF_H-50; g.fillStyle=PC.rule; g.fillRect(M,y-28,PDF_W-2*M,1.5);
     pdfText(g,"監理者（構造）配筋検査帳票　"+i.title,M,y,{size:17,color:PC.mute});
     pdfText(g,made,PDF_W/2,y,{size:17,align:"center",color:PC.mute});
-    pdfText(g,pg,PDF_W-M,y,{size:19,bold:true,align:"right",color:PC.ink}); });
+    pdfText(g,pg,PDF_W-M,y,{size:19,bold:true,align:"right",color:PC.acc}); });
 }
 
 /* ---- 1. 帳票ページ ---- */
@@ -1359,8 +1365,8 @@ async function pdfReportPages(){
     /* 右上の集計 */
     let rx=PDF_W-M; const py=M+56;
     if(d.finds.length) rx-=pdfPill(g,open? "未是正 "+open : "すべて是正済",rx,py,{size:20,right:true,bg:open?PC.ngbg:PC.okbg,fg:open?PC.ng:PC.ok})+12;
-    rx-=pdfPill(g,"指摘 "+d.finds.length+"件",rx,py,{size:20,right:true})+12;
-    pdfPill(g,"完了 "+tt.done+" / "+tt.all,rx,py,{size:20,right:true});
+    rx-=pdfPill(g,"指摘 "+d.finds.length+"件",rx,py,{size:20,right:true,fg:PC.acc})+12;
+    pdfPill(g,"完了 "+tt.done+" / "+tt.all,rx,py,{size:20,right:true,fg:PC.acc});
     /* 工事名・検査日・担当者：枠で囲まず、小さな項目名＋太字の内容を横に並べる */
     const info=[["工事名称",PROJECT.name,700],["検査箇所",i.place,520],["検査日",fmtDate(h.date),210],["検査方法",h.method,230],["監理担当者",h.kanri,240],["現場担当者",h.genba,240],["是正確認者",h.zesei,220]];
     let xx=M; const iy=M+118;
@@ -1396,8 +1402,8 @@ async function pdfReportPages(){
       y=pdfSecTitle(g,SPEC[t].label,idx.length+"部材"+(idx.length>n?"（"+(start+1)+"〜"+(start+part.length)+"）":""),x0,y);
       const W=LW+IW+part.length*cw, xd=x0+LW+IW, yh=y+HH1+HH2, yb=yh+rows.length*RH;
       /* 見出し（符号・位置）とまとまりの欄は薄い灰色で塗る */
-      g.fillStyle=PC.tint; g.fillRect(x0,y,W,HH1+HH2); g.fillRect(x0,yh,LW,yb-yh);
-      pdfText(g,"符号",x0+14,y+HH1/2+1,{size:17,color:PC.mute}); pdfText(g,"位置",x0+14,y+HH1+HH2/2,{size:17,color:PC.mute});
+      g.fillStyle=PC.tint; g.fillRect(x0,y,W,HH1+HH2); g.fillStyle=PC.soft; g.fillRect(x0,yh,LW,yb-yh);
+      pdfText(g,"符号",x0+14,y+HH1/2+1,{size:17,bold:true,color:PC.acc}); pdfText(g,"位置",x0+14,y+HH1+HH2/2,{size:17,bold:true,color:PC.acc});
       part.forEach((mi,j)=>{ const x=xd+j*cw, m=ms[mi];
         pdfFit(g,m.sym,x+cw/2,y+HH1/2+1,cw-8,{size:20,min:13,bold:true,align:"center",color:PC.ink});
         /* 位置：2行に収まらなければ文字を小さくして3行まで（入りきらない分は「…」） */
@@ -1408,7 +1414,7 @@ async function pdfReportPages(){
       let yy=yh;
       rows.forEach(r=>{
         if(r.first) pdfWrap(g,r.g,LW-20,19).forEach((l,k,a)=>pdfText(g,l,x0+14,yy+RH*r.n/2+(k-(a.length-1)/2)*22,{size:19,bold:true,color:PC.ink}));
-        pdfText(g,r.it,x0+LW+14,yy+RH/2,{size:18,color:"#3a3a3c"});
+        pdfText(g,r.it,x0+LW+14,yy+RH/2,{size:18,color:"#3a4550"});
         part.forEach((mi,j)=>{ const x=xd+j*cw, v=d.res[mi+"|"+r.k], cx=x+cw/2, cy=yy+RH/2;
           if(v==="ng"){ g.fillStyle=PC.ngbg; pdfRR(g,x+4,yy+3,cw-8,RH-6,6); g.fill(); penCross(g,cx,cy,16,PC.ng); }
           else if(v==="ok") penCheck(g,cx,cy,18,PC.blue);
@@ -1803,13 +1809,14 @@ async function exportXlsx(btn){
   try{
     const i=insp(), d=D(), h=d.head, ms=i.members, mark={ok:"✓",ng:"×",na:"－"};
     const wb=new ExcelJS.Workbook(); wb.creator="配筋検査アプリ";
-    const thin={style:"thin",color:{argb:"FF8C96A0"}}, B={top:thin,left:thin,bottom:thin,right:thin};
-    const hdrFill={type:"pattern",pattern:"solid",fgColor:{argb:"FFE3ECFB"}}, ngFill={type:"pattern",pattern:"solid",fgColor:{argb:"FFFDE5E2"}};
+    /* 色は PDF帳票と同じ（落ち着いた青と指摘の赤だけ。見出しは薄い青の塗り） */
+    const thin={style:"thin",color:{argb:"FFC5CFDA"}}, B={top:thin,left:thin,bottom:thin,right:thin};
+    const hdrFill={type:"pattern",pattern:"solid",fgColor:{argb:"FFEDF2F8"}}, ngFill={type:"pattern",pattern:"solid",fgColor:{argb:"FFFBEFED"}};
     const font={name:"游ゴシック",size:10};
     /* 1. 検査帳票 */
     const ws=wb.addWorksheet("検査帳票",{pageSetup:{paperSize:8,orientation:"landscape",fitToPage:true,fitToWidth:1,fitToHeight:0,margins:{left:.4,right:.4,top:.5,bottom:.5,header:.2,footer:.2}}});
     ws.getColumn(1).width=12; ws.getColumn(2).width=16;
-    ws.mergeCells("A1:J1"); ws.getCell("A1").value="監理者（構造）配筋検査帳票　"+i.title; ws.getCell("A1").font={name:"游ゴシック",size:14,bold:true};
+    ws.mergeCells("A1:J1"); ws.getCell("A1").value="監理者（構造）配筋検査帳票　"+i.title; ws.getCell("A1").font={name:"游ゴシック",size:14,bold:true,color:{argb:"FF34679C"}};
     const info=[["工事名称",PROJECT.name],["検査箇所",i.place],["検査日",h.date],["検査方法",h.method],["監理担当者",h.kanri],["現場担当者",h.genba],["是正確認者",h.zesei]];
     info.forEach(([k,v],j)=>{const r=ws.getRow(3+j); r.getCell(1).value=k; r.getCell(1).fill=hdrFill; r.getCell(1).border=B; ws.mergeCells(3+j,2,3+j,8); r.getCell(2).value=v||""; r.getCell(2).border=B; r.font=font;});
     let row=3+info.length+1;
@@ -1829,7 +1836,7 @@ async function exportXlsx(btn){
       SPEC[t].groups.forEach(g=>{ const start=row;
         g.items.forEach(it=>{ const k=g.g+"/"+it, r=ws.getRow(row); r.getCell(2).value=it; r.getCell(2).border=B; r.getCell(2).font=font;
           idx.forEach((mi,j)=>{ const v=d.res[mi+"|"+k]; const cell=r.getCell(3+j); cell.value=mark[v]||""; cell.border=B; cell.alignment={horizontal:"center"};
-            cell.font={name:"游ゴシック",size:11,bold:v==="ng",color:{argb:v==="ng"?"FFCF3527":v==="ok"?"FF17834A":"FF7B8692"}}; if(v==="ng") cell.fill=ngFill; });
+            cell.font={name:"游ゴシック",size:11,bold:v==="ng",color:{argb:v==="ng"?"FFC2453B":v==="ok"?"FF34679C":"FF66727F"}}; if(v==="ng") cell.fill=ngFill; });
           row++; });
         ws.mergeCells(start,1,row-1,1); const gc=ws.getCell(start,1); gc.value=g.g; gc.border=B; gc.font=font; gc.alignment={vertical:"middle",wrapText:true};
       });
